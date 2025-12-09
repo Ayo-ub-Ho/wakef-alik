@@ -1,0 +1,17 @@
+{
+  "name": "wakef",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "pnpm --filter backend dev",
+    "dev:db": "pnpm --filter backend dev:db",
+    "mobile": "pnpm --filter \"./mobile\" start",
+    "ios": "pnpm --filter \"./mobile\" ios",
+    "android": "pnpm --filter \"./mobile\" android"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.23.0"
+}
