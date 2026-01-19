@@ -77,11 +77,14 @@ L’application mobile développée permet de **mettre en relation des restauran
 
 ### Frontend Mobile
 
-- **React Native CLI**
+### Frontend Mobile
 
-  - Accès direct aux APIs natives Android / iOS
-  - Meilleure maîtrise de l’environnement mobile natif
-  - Choix adapté à un projet professionnel avancé
+- **React Native avec Expo**
+
+  - Environnement de développement rapide et stable
+  - Outils intégrés pour l’accès aux fonctionnalités natives (Camera, Location, Notifications, etc.)
+  - Réduction du temps de configuration et de mise en place
+  - Adapté au contexte pédagogique et aux contraintes de temps du projet
 
 ### Backend
 
@@ -97,18 +100,32 @@ L’application mobile développée permet de **mettre en relation des restauran
 
 #### Justification du choix NoSQL
 
-- Flexibilité du schéma de données
-- Adapté aux applications mobiles évolutives
-- Performances élevées en lecture/écriture
-- Scalabilité horizontale
-- Gestion simplifiée des relations via références
+> Initialement, le projet était prévu avec une base de données relationnelle (PostgreSQL),
+> conformément au cadre général du projet fil rouge.  
+> Toutefois, le cœur fonctionnel de l’application repose sur la **géolocalisation en temps réel**
+> des restaurants et des livreurs, ainsi que sur la recherche dynamique des livreurs les plus proches.
+>
+> Pour répondre efficacement à ce besoin, le choix a été porté sur une base de données NoSQL :
+> **MongoDB avec Mongoose**, qui offre un support natif des données géospatiales
+> (index géographiques, requêtes par distance, calcul de proximité).
+>
+> Ce choix est justifié par :
+>
+> - La gestion native des coordonnées GPS (GeoJSON)
+> - La possibilité d’effectuer des requêtes géographiques performantes (livreurs proches, rayon dynamique)
+> - Une meilleure adaptation aux applications mobiles basées sur la localisation
+> - La flexibilité du schéma pour faire évoluer rapidement les modèles de données
+> - Une intégration naturelle avec l’écosystème Node.js
+>
+> MongoDB permet ainsi de mettre en œuvre de manière simple, performante et scalable
+> le mécanisme central du projet : **l’attribution automatique des livraisons en fonction de la proximité géographique**.
 
 ---
 
 ## 🏗️ Architecture Générale
 
 ```
-Application Mobile (React Native CLI)
+Application Mobile (React Native + Expo)
           |
           | HTTPS + JWT
           |
@@ -171,7 +188,7 @@ Les diagrammes suivants seront réalisés et fournis dans le dossier `/docs` :
 
 ---
 
-## 📱 Application Mobile (React Native CLI)
+## 📱 Application Mobile (React Native + Expo)
 
 ### Navigation
 
