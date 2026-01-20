@@ -4,6 +4,14 @@ import { IGeoPoint } from '../types';
 
 
 
+export type DeliveryStatus = 
+    | 'PENDING' 
+    | 'PROPOSED' 
+    | 'ACCEPTED' 
+    | 'IN_DELIVERY' 
+    | 'DELIVERED' 
+    | 'CANCELLED';
+
 export interface IDeliveryRequest extends Document {
     restaurantId: Schema.Types.ObjectId;
     createdByUserId: Schema.Types.ObjectId;
@@ -13,8 +21,11 @@ export interface IDeliveryRequest extends Document {
     dropoffAddressText: string;
     notes?: string;
     deliveryFee: number;
-    status: 'PENDING' | 'OFFERED' | 'ASSIGNED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+    status: DeliveryStatus;
     assignedDriverId?: Schema.Types.ObjectId;
+    assignedAt?: Date;
+    cancelledAt?: Date;
+    deliveredAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -60,13 +71,21 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
         },
         status: {
             type: String,
-            enum: ['PENDING', 'OFFERED', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'],
+            enum: ['PENDING', 'PROPOSED', 'ACCEPTED', 'IN_DELIVERY', 'DELIVERED', 'CANCELLED'],
             default: 'PENDING',
         },
         assignedDriverId: {
             type: Schema.Types.ObjectId,
             ref: 'DriverProfile',
-            required: false,
+        },
+        assignedAt: {
+            type: Date,
+        },
+        cancelledAt: {
+            type: Date,
+        },
+        deliveredAt: {
+            type: Date,
         },
     },
     {
@@ -75,12 +94,9 @@ const DeliveryRequestSchema = new Schema<IDeliveryRequest>(
 );
 
 // Indexes for efficient queries
-DeliveryRequestSchema.index({ restaurantId: 1 });
-DeliveryRequestSchema.index({ createdByUserId: 1 });
-DeliveryRequestSchema.index({ assignedDriverId: 1 });
-DeliveryRequestSchema.index({ status: 1 });
-DeliveryRequestSchema.index({ createdAt: -1 });
 DeliveryRequestSchema.index({ pickupLocation: '2dsphere' });
-DeliveryRequestSchema.index({ dropoffLocation: '2dsphere' });
+DeliveryRequestSchema.index({ restaurantId: 1, createdAt: -1 });
+DeliveryRequestSchema.index({ status: 1, createdAt: -1 });
+DeliveryRequestSchema.index({ assignedDriverId: 1 });
 
 export const DeliveryRequest = model<IDeliveryRequest>('DeliveryRequest', DeliveryRequestSchema);

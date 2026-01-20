@@ -1,11 +1,16 @@
 import { Schema, model, Document } from 'mongoose';
 
+export type OfferState = 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+
 export interface IRequestOffer extends Document {
     requestId: Schema.Types.ObjectId;
     driverId: Schema.Types.ObjectId;
-    state: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+    state: OfferState;
     sentAt: Date;
     respondedAt?: Date;
+    expiresAt?: Date;
+    createdAt: Date;
+    updatedAt: Date;
 }
 
 const RequestOfferSchema = new Schema<IRequestOffer>(
@@ -22,29 +27,29 @@ const RequestOfferSchema = new Schema<IRequestOffer>(
         },
         state: {
             type: String,
-            enum: ['PENDING', 'ACCEPTED', 'REJECTED', 'EXPIRED'],
-            default: 'PENDING',
+            enum: ['SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED'],
+            default: 'SENT',
         },
         sentAt: {
             type: Date,
+            required: [true, 'Sent at timestamp is required'],
             default: Date.now,
         },
         respondedAt: {
             type: Date,
-            required: false,
+        },
+        expiresAt: {
+            type: Date,
         },
     },
     {
-        timestamps: false, // We manage sentAt and respondedAt manually
+        timestamps: true,
     }
 );
 
-// Indexes for efficient queries
-RequestOfferSchema.index({ requestId: 1 });
-RequestOfferSchema.index({ driverId: 1 });
-RequestOfferSchema.index({ state: 1 });
-RequestOfferSchema.index({ sentAt: -1 });
-// Composite index for unique offers per driver per request
+// Unique constraint to ensure one offer per request-driver pair
 RequestOfferSchema.index({ requestId: 1, driverId: 1 }, { unique: true });
+RequestOfferSchema.index({ driverId: 1, state: 1, sentAt: -1 });
+RequestOfferSchema.index({ requestId: 1 });
 
 export const RequestOffer = model<IRequestOffer>('RequestOffer', RequestOfferSchema);
