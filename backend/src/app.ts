@@ -1,9 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-
-// Import routes (we will create this later)
-// import rootRouter from './routes';
+import router from './router';
 
 const app = express();
 
@@ -16,6 +14,7 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Backend is running' });
 });
 
-
+// Mount API routes
+app.use('/api', router);
 
 export default app;
