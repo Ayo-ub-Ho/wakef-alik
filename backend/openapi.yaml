@@ -1,0 +1,1224 @@
+openapi: 3.0.3
+info:
+  title: Wakef Alik API
+  description: |
+    Food delivery platform API connecting restaurants with delivery drivers.
+    
+    ## Authentication
+    Most endpoints require JWT authentication. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <your-token>
+    ```
+    
+    ## Roles
+    - **DRIVER**: Delivery drivers
+    - **RESTAURANT**: Restaurant owners
+    - **ADMIN**: System administrators
+    
+    ## Geolocation
+    Location fields use GeoJSON Point format with coordinates as [longitude, latitude].
+  version: 1.0.0
+  contact:
+    name: Wakef Alik API Support
+servers:
+  - url: http://localhost:3000/api
+    description: Local development server
+  - url: https://api.wakef-alik.com/api
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and token management
+  - name: Driver Profile
+    description: Driver profile management
+  - name: Driver Operations
+    description: Driver delivery operations and location updates
+  - name: Restaurant Profile
+    description: Restaurant profile management
+  - name: Delivery Requests
+    description: Restaurant delivery request management
+  - name: Offers
+    description: Driver offer management
+
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user
+      description: Create a new user account with role (DRIVER, RESTAURANT, or ADMIN)
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fullName
+                - email
+                - phone
+                - password
+                - role
+              properties:
+                fullName:
+                  type: string
+                  example: John Doe
+                email:
+                  type: string
+                  format: email
+                  example: john.doe@example.com
+                phone:
+                  type: string
+                  example: '+1234567890'
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: SecurePass123!
+                role:
+                  type: string
+                  enum: [DRIVER, RESTAURANT, ADMIN]
+                  example: DRIVER
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Bad request - validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login a user
+      description: Authenticate user and receive access and refresh tokens
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john.doe@example.com
+                password:
+                  type: string
+                  format: password
+                  example: SecurePass123!
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Get a new access token using a valid refresh token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout a user
+      description: Invalidate refresh token
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /driver/profile:
+    post:
+      tags:
+        - Driver Profile
+      summary: Create driver profile
+      description: Create a profile for a driver user
+      operationId: createDriverProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - vehicleType
+              properties:
+                vehicleType:
+                  type: string
+                  enum: [BIKE, MOTORCYCLE, CAR, VAN]
+                  example: MOTORCYCLE
+                hasDeliveryBox:
+                  type: boolean
+                  default: false
+                  example: true
+      responses:
+        '201':
+          description: Driver profile created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DriverProfile'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+    get:
+      tags:
+        - Driver Profile
+      summary: Get driver's profile
+      description: Get the profile of the authenticated driver
+      operationId: getDriverProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Driver profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DriverProfile'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+    patch:
+      tags:
+        - Driver Profile
+      summary: Update driver profile
+      description: Update driver profile information
+      operationId: updateDriverProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vehicleType:
+                  type: string
+                  enum: [BIKE, MOTORCYCLE, CAR, VAN]
+                hasDeliveryBox:
+                  type: boolean
+                isAvailable:
+                  type: boolean
+      responses:
+        '200':
+          description: Driver profile updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DriverProfile'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /driver/available:
+    get:
+      tags:
+        - Driver Profile
+      summary: Get all available drivers
+      description: Get a list of available and verified drivers (Admin/Restaurant access)
+      operationId: getAvailableDrivers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Available drivers retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DriverProfile'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /driver/location:
+    patch:
+      tags:
+        - Driver Operations
+      summary: Update driver's current location
+      description: Update the driver's current GPS location for delivery matching
+      operationId: updateDriverLocation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - location
+              properties:
+                location:
+                  $ref: '#/components/schemas/GeoJSONPoint'
+      responses:
+        '200':
+          description: Location updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          currentLocation:
+                            $ref: '#/components/schemas/GeoJSONPoint'
+        '400':
+          description: Bad request - invalid coordinates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /driver/deliveries:
+    get:
+      tags:
+        - Driver Operations
+      summary: Get driver's active deliveries
+      description: Get all accepted and in-delivery requests assigned to the driver
+      operationId: getActiveDeliveries
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active deliveries retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DeliveryRequest'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /restaurant/profile:
+    post:
+      tags:
+        - Restaurant Profile
+      summary: Create restaurant profile
+      description: Create a profile for a restaurant user
+      operationId: createRestaurantProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - restaurantName
+                - ownerName
+                - addressText
+                - location
+              properties:
+                restaurantName:
+                  type: string
+                  example: Pizza Palace
+                ownerName:
+                  type: string
+                  example: John Doe
+                addressText:
+                  type: string
+                  example: 123 Main Street, New York, NY
+                location:
+                  $ref: '#/components/schemas/GeoJSONPoint'
+      responses:
+        '201':
+          description: Restaurant profile created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RestaurantProfile'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+    get:
+      tags:
+        - Restaurant Profile
+      summary: Get restaurant's profile
+      description: Get the profile of the authenticated restaurant
+      operationId: getRestaurantProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Restaurant profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RestaurantProfile'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+    patch:
+      tags:
+        - Restaurant Profile
+      summary: Update restaurant profile
+      description: Update restaurant profile information
+      operationId: updateRestaurantProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                restaurantName:
+                  type: string
+                ownerName:
+                  type: string
+                addressText:
+                  type: string
+                location:
+                  $ref: '#/components/schemas/GeoJSONPoint'
+      responses:
+        '200':
+          description: Restaurant profile updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RestaurantProfile'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /restaurant/verified:
+    get:
+      tags:
+        - Restaurant Profile
+      summary: Get all verified restaurants
+      description: Get a list of all verified restaurants (Public access)
+      operationId: getVerifiedRestaurants
+      responses:
+        '200':
+          description: Verified restaurants retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/RestaurantProfile'
+
+  /requests:
+    post:
+      tags:
+        - Delivery Requests
+      summary: Create a new delivery request
+      description: |
+        Create a delivery request and automatically match with nearby drivers.
+        The restaurantId must be owned by the authenticated user.
+      operationId: createDeliveryRequest
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - restaurantId
+                - pickupLocation
+                - pickupAddressText
+                - dropoffLocation
+                - dropoffAddressText
+                - deliveryFee
+              properties:
+                restaurantId:
+                  type: string
+                  format: objectId
+                  description: The restaurant ID that must belong to the authenticated user
+                  example: 507f1f77bcf86cd799439011
+                pickupLocation:
+                  $ref: '#/components/schemas/GeoJSONPoint'
+                pickupAddressText:
+                  type: string
+                  example: 123 Main Street, New York, NY
+                dropoffLocation:
+                  $ref: '#/components/schemas/GeoJSONPoint'
+                dropoffAddressText:
+                  type: string
+                  example: 456 Customer Avenue, New York, NY
+                deliveryFee:
+                  type: number
+                  format: float
+                  minimum: 0
+                  example: 15.50
+                notes:
+                  type: string
+                  example: Ring doorbell twice
+      responses:
+        '201':
+          description: Delivery request created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryRequest'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /requests/my:
+    get:
+      tags:
+        - Delivery Requests
+      summary: Get my delivery requests
+      description: Get all delivery requests for the authenticated restaurant
+      operationId: getMyRequests
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: restaurantId
+          in: query
+          description: Filter by specific restaurant ID
+          required: false
+          schema:
+            type: string
+            format: objectId
+      responses:
+        '200':
+          description: Requests retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DeliveryRequest'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /requests/{id}:
+    get:
+      tags:
+        - Delivery Requests
+      summary: Get request by ID
+      description: Get a specific delivery request by ID (restaurant owner only)
+      operationId: getRequestById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Delivery request ID
+          required: true
+          schema:
+            type: string
+            format: objectId
+      responses:
+        '200':
+          description: Request retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryRequest'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /requests/{id}/cancel:
+    patch:
+      tags:
+        - Delivery Requests
+      summary: Cancel a delivery request
+      description: Cancel a delivery request (only if PENDING or PROPOSED)
+      operationId: cancelRequest
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Delivery request ID
+          required: true
+          schema:
+            type: string
+            format: objectId
+      responses:
+        '200':
+          description: Request cancelled successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryRequest'
+        '400':
+          description: Cannot cancel request in current status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /requests/{id}/status:
+    patch:
+      tags:
+        - Delivery Requests
+      summary: Update request status (Driver)
+      description: Update delivery request status to IN_DELIVERY or DELIVERED (assigned driver only)
+      operationId: updateRequestStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Delivery request ID
+          required: true
+          schema:
+            type: string
+            format: objectId
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [IN_DELIVERY, DELIVERED]
+                  example: IN_DELIVERY
+      responses:
+        '200':
+          description: Request status updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryRequest'
+        '400':
+          description: Invalid status transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /offers/inbox:
+    get:
+      tags:
+        - Offers
+      summary: Get driver's inbox
+      description: Get pending delivery offers for the authenticated driver
+      operationId: getDriverInbox
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: state
+          in: query
+          description: Filter offers by state
+          required: false
+          schema:
+            type: string
+            enum: [SENT, ACCEPTED, REJECTED, EXPIRED]
+            example: SENT
+      responses:
+        '200':
+          description: Inbox retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/RequestOffer'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /offers/{offerId}/accept:
+    post:
+      tags:
+        - Offers
+      summary: Accept a delivery offer
+      description: Accept a delivery offer (atomic operation, only one driver can accept)
+      operationId: acceptOffer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: offerId
+          in: path
+          description: Request offer ID
+          required: true
+          schema:
+            type: string
+            format: objectId
+      responses:
+        '200':
+          description: Offer accepted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryRequest'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: Request already assigned to another driver
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /offers/{offerId}/reject:
+    post:
+      tags:
+        - Offers
+      summary: Reject a delivery offer
+      description: Reject a delivery offer sent to the driver
+      operationId: rejectOffer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: offerId
+          in: path
+          description: Request offer ID
+          required: true
+          schema:
+            type: string
+            format: objectId
+      responses:
+        '200':
+          description: Offer rejected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT authentication token obtained from login or register endpoint
+
+  schemas:
+    GeoJSONPoint:
+      type: object
+      required:
+        - type
+        - coordinates
+      properties:
+        type:
+          type: string
+          enum: [Point]
+          example: Point
+        coordinates:
+          type: array
+          items:
+            type: number
+          minItems: 2
+          maxItems: 2
+          description: '[longitude, latitude] - Note: longitude first, then latitude'
+          example: [-73.935242, 40.730610]
+
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: objectId
+          example: 507f1f77bcf86cd799439011
+        fullName:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        phone:
+          type: string
+          example: '+1234567890'
+        role:
+          type: string
+          enum: [DRIVER, RESTAURANT, ADMIN]
+          example: DRIVER
+        isActive:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DriverProfile:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: objectId
+        userId:
+          type: string
+          format: objectId
+        vehicleType:
+          type: string
+          enum: [BIKE, MOTORCYCLE, CAR, VAN]
+          example: MOTORCYCLE
+        hasDeliveryBox:
+          type: boolean
+          example: true
+        isAvailable:
+          type: boolean
+          example: true
+        isVerified:
+          type: boolean
+          example: true
+        currentLocation:
+          $ref: '#/components/schemas/GeoJSONPoint'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RestaurantProfile:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: objectId
+        userId:
+          type: string
+          format: objectId
+        restaurantName:
+          type: string
+          example: Pizza Palace
+        ownerName:
+          type: string
+          example: John Doe
+        addressText:
+          type: string
+          example: 123 Main Street, New York, NY
+        location:
+          $ref: '#/components/schemas/GeoJSONPoint'
+        isVerified:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DeliveryRequest:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: objectId
+        restaurantId:
+          type: string
+          format: objectId
+        createdByUserId:
+          type: string
+          format: objectId
+        pickupLocation:
+          $ref: '#/components/schemas/GeoJSONPoint'
+        pickupAddressText:
+          type: string
+          example: 123 Main Street, New York, NY
+        dropoffLocation:
+          $ref: '#/components/schemas/GeoJSONPoint'
+        dropoffAddressText:
+          type: string
+          example: 456 Customer Avenue, New York, NY
+        notes:
+          type: string
+          example: Ring doorbell twice
+        deliveryFee:
+          type: number
+          format: float
+          example: 15.50
+        status:
+          type: string
+          enum: [PENDING, PROPOSED, ACCEPTED, IN_DELIVERY, DELIVERED, CANCELLED]
+          example: PENDING
+        assignedDriverId:
+          type: string
+          format: objectId
+          nullable: true
+        assignedAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RequestOffer:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: objectId
+        requestId:
+          type: string
+          format: objectId
+        driverId:
+          type: string
+          format: objectId
+        state:
+          type: string
+          enum: [SENT, ACCEPTED, REJECTED, EXPIRED]
+          example: SENT
+        sentAt:
+          type: string
+          format: date-time
+        respondedAt:
+          type: string
+          format: date-time
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: User registered successfully
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            accessToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            refreshToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    TokenResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Token refreshed successfully
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            refreshToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operation completed successfully
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: Validation error
+
+  responses:
+    UnauthorizedError:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: Authentication required
+
+    ForbiddenError:
+      description: Insufficient permissions for this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: Insufficient permissions
+
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: Resource not found
