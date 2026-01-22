@@ -7,7 +7,6 @@ import offerRoutes from './offer.routes';
 
 const router = Router();
 
-// Mount route modules
 router.use('/auth', authRoutes);
 router.use('/driver', driverRoutes);
 router.use('/restaurant', restaurantRoutes);

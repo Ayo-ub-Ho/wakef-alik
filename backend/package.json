@@ -4,7 +4,7 @@
   "description": "Backend API for Wakef",
   "main": "dist/server.js",
   "scripts": {
-    "start": "ts-node src/server.ts",
+    "start": "node dist/server.js",
     "dev": "node --watch --require ts-node/register src/server.ts",
     "dev:db": "docker compose up mongo -d",
     "build": "tsc"
@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@scalar/express-api-reference": "^0.8.35",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -21,7 +22,6 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.0.1",
-    "swagger-ui-express": "^5.0.0",
     "yamljs": "^0.3.0"
   },
   "devDependencies": {
@@ -30,7 +30,6 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.10.2",
-    "@types/swagger-ui-express": "^4.1.6",
     "@types/yamljs": "^0.2.34",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

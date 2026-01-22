@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import swaggerUi from 'swagger-ui-express';
+import { apiReference } from '@scalar/express-api-reference';
 import YAML from 'yamljs';
 import path from 'path';
 import router from './router';
@@ -10,9 +10,24 @@ const app = express();
 
 // Load OpenAPI specification
 const openapiPath = path.join(__dirname, '..', 'openapi.yaml');
-const swaggerDocument = YAML.load(openapiPath);
+const openapiDocument = YAML.load(openapiPath);
 
-app.use(helmet());
+// Configure helmet with CSP that allows Scalar API documentation
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'"],
+        workerSrc: ["'self'", "blob:"],
+      },
+    },
+  })
+);
 app.use(cors());
 app.use(express.json());
 
@@ -21,11 +36,15 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Backend is running' });
 });
 
-// Swagger UI documentation
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Wakef Alik API Documentation',
-}));
+// Scalar API documentation
+app.use(
+  '/api/docs',
+  apiReference({
+    spec: {
+      content: openapiDocument,
+    },
+  })
+);
 
 // Mount API routes
 app.use('/api', router);

@@ -928,7 +928,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT authentication token obtained from login or register endpoint
+      description: |
+        JWT authentication token obtained from login or register endpoint.
+        Enter only the token value without the 'Bearer ' prefix - it will be added automatically.
 
   schemas:
     GeoJSONPoint:

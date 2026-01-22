@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import * as driverService from '../services/driver.service';
+import * as matchingService from '../services/matching.service';
 
 /**
  * Create driver profile
@@ -112,6 +113,72 @@ export const getAvailableDrivers = async (req: AuthRequest, res: Response): Prom
         });
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to get drivers';
+        res.status(500).json({
+            success: false,
+            error: errorMessage,
+        });
+    }
+};
+
+/**
+ * Get nearby delivery requests for driver
+ * GET /api/driver/nearby-requests
+ * Query params:
+ *   - longitude: number (required)
+ *   - latitude: number (required)
+ *   - radius: number (optional, meters, default: 5000)
+ *   - limit: number (optional, default: 20)
+ */
+export const getNearbyDeliveryRequests = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({
+                success: false,
+                error: 'Authentication required',
+            });
+            return;
+        }
+
+        const longitude = parseFloat(req.query.longitude as string);
+        const latitude = parseFloat(req.query.latitude as string);
+        const radius = req.query.radius ? parseInt(req.query.radius as string, 10) : 5000;
+        const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+
+        // Validate coordinates
+        if (isNaN(longitude) || isNaN(latitude)) {
+            res.status(400).json({
+                success: false,
+                error: 'Valid longitude and latitude are required',
+            });
+            return;
+        }
+
+        if (longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90) {
+            res.status(400).json({
+                success: false,
+                error: 'Invalid coordinates: longitude must be between -180 and 180, latitude between -90 and 90',
+            });
+            return;
+        }
+
+        const location = {
+            type: 'Point' as const,
+            coordinates: [longitude, latitude] as [number, number],
+        };
+
+        const requests = await matchingService.findNearbyDeliveryRequests(location, radius, limit);
+
+        res.status(200).json({
+            success: true,
+            data: requests,
+            meta: {
+                count: requests.length,
+                radius,
+                location: { longitude, latitude },
+            },
+        });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to get nearby requests';
         res.status(500).json({
             success: false,
             error: errorMessage,

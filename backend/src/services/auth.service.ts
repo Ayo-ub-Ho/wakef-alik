@@ -38,7 +38,6 @@ export interface AuthResponse {
 export const register = async (input: RegisterInput): Promise<AuthResponse> => {
     const { fullName, email, phone, password, role } = input;
 
-    // Check if user already exists
     const existingUser = await User.findOne({
         $or: [{ email }, { phone }],
     });
@@ -52,10 +51,8 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
         }
     }
 
-    // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Create user
     const user = await User.create({
         fullName,
         email,
@@ -65,7 +62,6 @@ export const register = async (input: RegisterInput): Promise<AuthResponse> => {
         isActive: true,
     });
 
-    // Generate tokens
     const tokenPayload = {
         userId: user._id.toString(),
         role: user.role,

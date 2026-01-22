@@ -1,6 +1,20 @@
 import { Schema, Types } from 'mongoose';
-import { DriverProfile, DeliveryRequest, RequestOffer } from '../models';
+import { DriverProfile, DeliveryRequest, RequestOffer, RestaurantProfile } from '../models';
 import { IGeoPoint } from '../types';
+
+export interface NearbyDeliveryRequest {
+    _id: Schema.Types.ObjectId;
+    distance: number;
+    restaurantId: Schema.Types.ObjectId;
+    restaurantName: string;
+    pickupLocation: IGeoPoint;
+    pickupAddressText: string;
+    dropoffLocation: IGeoPoint;
+    dropoffAddressText: string;
+    deliveryFee: number;
+    status: string;
+    createdAt: Date;
+}
 
 interface NearbyDriver {
     _id: Schema.Types.ObjectId;
@@ -241,4 +255,70 @@ export const rejectOffer = async (
     });
 
     return { success: true, message: 'Offer rejected successfully' };
+};
+
+/**
+ * Find nearby active delivery requests for drivers
+ * Returns delivery requests from restaurants within the specified radius
+ * 
+ * @param location Driver's current GeoJSON Point location
+ * @param radiusMeters Search radius in meters (default: 5000 = 5km)
+ * @param limit Maximum number of requests to return (default: 20)
+ * @returns Array of nearby delivery requests with restaurant info
+ */
+export const findNearbyDeliveryRequests = async (
+    location: IGeoPoint,
+    radiusMeters: number = 5000,
+    limit: number = 20
+): Promise<NearbyDeliveryRequest[]> => {
+    const requests = await DeliveryRequest.aggregate([
+        {
+            $geoNear: {
+                near: location,
+                distanceField: 'distance',
+                maxDistance: radiusMeters,
+                spherical: true,
+                query: {
+                    status: { $in: ['PENDING', 'PROPOSED'] },
+                    assignedDriverId: { $exists: false },
+                },
+            },
+        },
+        {
+            $lookup: {
+                from: 'restaurantprofiles',
+                localField: 'restaurantId',
+                foreignField: '_id',
+                as: 'restaurant',
+            },
+        },
+        {
+            $unwind: '$restaurant',
+        },
+        {
+            $match: {
+                'restaurant.isVerified': true,
+            },
+        },
+        {
+            $limit: limit,
+        },
+        {
+            $project: {
+                _id: 1,
+                distance: 1,
+                restaurantId: 1,
+                restaurantName: '$restaurant.restaurantName',
+                pickupLocation: 1,
+                pickupAddressText: 1,
+                dropoffLocation: 1,
+                dropoffAddressText: 1,
+                deliveryFee: 1,
+                status: 1,
+                createdAt: 1,
+            },
+        },
+    ]);
+
+    return requests;
 };

@@ -19,6 +19,7 @@ const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
  * Generate an access token
  */
 export const generateAccessToken = (payload: TokenPayload): string => {
+    console.log('Generating access token with payload:', payload);
     return jwt.sign(payload, JWT_SECRET, {
         expiresIn: JWT_EXPIRES_IN,
     } as jwt.SignOptions);
@@ -38,6 +39,7 @@ export const generateRefreshToken = (payload: TokenPayload): string => {
  */
 export const verifyAccessToken = (token: string): DecodedToken => {
     try {
+        console.log('Verifying token:', token);
         return jwt.verify(token, JWT_SECRET) as DecodedToken;
     } catch (error) {
         throw new Error('Invalid or expired access token');

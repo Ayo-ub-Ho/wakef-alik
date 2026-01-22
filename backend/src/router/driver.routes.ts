@@ -44,4 +44,20 @@ router.get(
     driverController.getAvailableDrivers
 );
 
+/**
+ * @route   GET /api/driver/nearby-requests
+ * @desc    Get nearby delivery requests from restaurants
+ * @access  Private (DRIVER only)
+ * @query   longitude - Driver's longitude (required)
+ * @query   latitude - Driver's latitude (required)
+ * @query   radius - Search radius in meters (optional, default: 5000)
+ * @query   limit - Maximum results (optional, default: 20)
+ */
+router.get(
+    '/nearby-requests',
+    authenticate,
+    requireRole('DRIVER'),
+    driverController.getNearbyDeliveryRequests
+);
+
 export default router;

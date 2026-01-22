@@ -12,5 +12,6 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/openapi.yaml ./openapi.yaml
 
 CMD ["npm", "start"]
