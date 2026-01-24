@@ -65,6 +65,7 @@ interface AuthResponseData {
 
 /**
  * Parses auth response from various possible shapes:
+ * - { success: true, data: { user, tokens: { accessToken, refreshToken } } }
  * - { success: true, data: { user, accessToken, refreshToken } }
  * - { data: { user, accessToken, refreshToken } }
  * - { user, accessToken, refreshToken }
@@ -76,9 +77,23 @@ const parseAuthResponse = (response: unknown): AuthResponseData | null => {
 
   const data = response as Record<string, unknown>;
 
-  // Shape: { success: true, data: { ... } }
+  // Shape: { success: true, data: { user, tokens: { accessToken, refreshToken } } }
   if (data.success === true && data.data && typeof data.data === 'object') {
     const nested = data.data as Record<string, unknown>;
+    
+    // Check for tokens nested object first (backend actual response)
+    if (nested.user && nested.tokens && typeof nested.tokens === 'object') {
+      const tokens = nested.tokens as Record<string, unknown>;
+      if (typeof tokens.accessToken === 'string' && typeof tokens.refreshToken === 'string') {
+        return {
+          user: nested.user as User,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        };
+      }
+    }
+    
+    // Fallback: tokens at same level as user
     if (nested.user && nested.accessToken && nested.refreshToken) {
       return {
         user: nested.user as User,
@@ -88,9 +103,22 @@ const parseAuthResponse = (response: unknown): AuthResponseData | null => {
     }
   }
 
-  // Shape: { data: { ... } }
+  // Shape: { data: { user, tokens: {...} } } or { data: { user, accessToken, refreshToken } }
   if (data.data && typeof data.data === 'object') {
     const nested = data.data as Record<string, unknown>;
+    
+    // Check for tokens nested object
+    if (nested.user && nested.tokens && typeof nested.tokens === 'object') {
+      const tokens = nested.tokens as Record<string, unknown>;
+      if (typeof tokens.accessToken === 'string' && typeof tokens.refreshToken === 'string') {
+        return {
+          user: nested.user as User,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        };
+      }
+    }
+    
     if (nested.user && nested.accessToken && nested.refreshToken) {
       return {
         user: nested.user as User,
@@ -124,6 +152,15 @@ const getErrorMessage = (error: unknown): string => {
       const response = err.response as Record<string, unknown>;
       if (response.data && typeof response.data === 'object') {
         const data = response.data as Record<string, unknown>;
+        
+        // Handle validation errors with details array
+        if (data.error === 'Validation failed' && Array.isArray(data.details)) {
+          const details = data.details as { msg?: string; path?: string }[];
+          if (details.length > 0 && details[0].msg) {
+            return details[0].msg;
+          }
+        }
+        
         if (typeof data.message === 'string') return data.message;
         if (typeof data.error === 'string') return data.error;
       }
