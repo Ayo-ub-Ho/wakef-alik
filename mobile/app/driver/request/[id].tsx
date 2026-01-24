@@ -9,10 +9,9 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Href } from 'expo-router';
-import { useRequestsStore } from '../../../src/stores/requests.store';
+import { useDriverOpsStore } from '../../../src/stores/driverOps.store';
 import { DeliveryStatus, DeliveryRequest } from '../../../src/types/models';
 import { LoadingView } from '../../../src/components/LoadingView';
-import { ErrorBanner } from '../../../src/components/ErrorBanner';
 import { EmptyState } from '../../../src/components/EmptyState';
 
 const STATUS_COLORS: Record<DeliveryStatus, string> = {
@@ -25,32 +24,25 @@ const STATUS_COLORS: Record<DeliveryStatus, string> = {
 };
 
 const STATUS_DESCRIPTIONS: Record<DeliveryStatus, string> = {
-  PENDING: 'Waiting for drivers to make offers',
-  PROPOSED: 'Drivers have submitted offers',
-  ACCEPTED: 'A driver has been assigned',
-  IN_DELIVERY: 'Driver is delivering your order',
+  PENDING: 'Waiting for offers',
+  PROPOSED: 'Offers have been submitted',
+  ACCEPTED: 'Driver assigned - ready to start',
+  IN_DELIVERY: 'Delivery in progress',
   DELIVERED: 'Delivery completed',
-  CANCELLED: 'This request has been cancelled',
+  CANCELLED: 'Request cancelled',
 };
 
 export default function RequestDetailsScreen() {
   const router = useRouter();
   const { id, data } = useLocalSearchParams<{ id: string; data?: string }>();
-  const {
-    current,
-    loading,
-    error,
-    fetchRequestById,
-    cancel,
-    clearCurrent,
-    clearError,
-  } = useRequestsStore();
+  const { updateStatus, loadActiveDeliveries } = useDriverOpsStore();
 
   const [request, setRequest] = useState<DeliveryRequest | null>(null);
-  const [cancelling, setCancelling] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
-    // If data is passed via params, use it directly
+    // Parse data from navigation params
     if (data) {
       try {
         const parsed = JSON.parse(data);
@@ -59,66 +51,112 @@ export default function RequestDetailsScreen() {
         console.error('Failed to parse request data:', err);
       }
     }
+    setLoading(false);
+  }, [data]);
 
-    // Also fetch fresh data in background (but don't block UI)
-    if (id) {
-      fetchRequestById(id);
-    }
-
-    return () => {
-      clearCurrent();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, data]);
-
-  // Sync with store's current when it updates
-  useEffect(() => {
-    if (current && current._id === id) {
-      setRequest(current);
-    }
-  }, [current, id]);
-
-  const displayRequest = request || current;
-  const canCancel =
-    displayRequest?.status === 'PENDING' ||
-    displayRequest?.status === 'PROPOSED';
-
-  const handleCancel = () => {
-    Alert.alert(
-      'Cancel Request',
-      'Are you sure you want to cancel this delivery request?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            if (!id) return;
-            setCancelling(true);
-            try {
-              await cancel(id);
-              // Update local state immediately
-              setRequest(prev =>
-                prev ? { ...prev, status: 'CANCELLED' } : null,
-              );
-              Alert.alert('Success', 'Request has been cancelled');
-            } catch (err) {
-              console.error('Cancel failed:', err);
-            } finally {
-              setCancelling(false);
-            }
-          },
+  const handleStartDelivery = () => {
+    Alert.alert('Start Delivery', 'Are you ready to start this delivery?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Start',
+        onPress: async () => {
+          if (!id) return;
+          setProcessing(true);
+          try {
+            await updateStatus(id, 'IN_DELIVERY');
+            // Update local state instead of refetching
+            setRequest(prev =>
+              prev ? { ...prev, status: 'IN_DELIVERY' } : null,
+            );
+            await loadActiveDeliveries();
+            Alert.alert('Success', 'Delivery started!');
+          } catch (err) {
+            console.error('Start delivery failed:', err);
+          } finally {
+            setProcessing(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
-  // Show loading only if we have neither parsed data nor store data
-  if (loading && !displayRequest) {
-    return <LoadingView text="Loading request..." />;
+  const handleMarkDelivered = () => {
+    Alert.alert('Complete Delivery', 'Has this delivery been completed?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Yes, Completed',
+        onPress: async () => {
+          if (!id) return;
+          setProcessing(true);
+          try {
+            await updateStatus(id, 'DELIVERED');
+            // Update local state instead of refetching
+            setRequest(prev =>
+              prev ? { ...prev, status: 'DELIVERED' } : null,
+            );
+            await loadActiveDeliveries();
+            Alert.alert('Success', 'Delivery marked as completed!');
+          } catch (err) {
+            console.error('Mark delivered failed:', err);
+          } finally {
+            setProcessing(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const renderActionButton = () => {
+    if (!request) return null;
+
+    if (request.status === 'ACCEPTED') {
+      return (
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            styles.startButton,
+            processing && styles.buttonDisabled,
+          ]}
+          onPress={handleStartDelivery}
+          disabled={processing}
+        >
+          {processing ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.actionButtonText}>🚚 Start Delivery</Text>
+          )}
+        </TouchableOpacity>
+      );
+    }
+
+    if (request.status === 'IN_DELIVERY') {
+      return (
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            styles.deliveredButton,
+            processing && styles.buttonDisabled,
+          ]}
+          onPress={handleMarkDelivered}
+          disabled={processing}
+        >
+          {processing ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.actionButtonText}>✅ Mark Delivered</Text>
+          )}
+        </TouchableOpacity>
+      );
+    }
+
+    return null;
+  };
+
+  if (loading) {
+    return <LoadingView text="Loading..." />;
   }
 
-  if (!displayRequest) {
+  if (!request) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -132,10 +170,10 @@ export default function RequestDetailsScreen() {
         </View>
         <EmptyState
           icon="📦"
-          title="Request not found"
-          description="This request may have been deleted or is unavailable"
-          actionLabel="Go to Requests"
-          onAction={() => router.replace('/restaurant/requests' as Href)}
+          title="Request data unavailable"
+          description="Please open request details from Nearby, Inbox, or Deliveries screen"
+          actionLabel="Go to Deliveries"
+          onAction={() => router.replace('/driver/deliveries' as Href)}
         />
       </View>
     );
@@ -146,33 +184,31 @@ export default function RequestDetailsScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerBackButton}
-          onPress={() => router.replace('/restaurant/requests' as Href)}
+          onPress={() => router.replace('/driver' as Href)}
         >
           <Text style={styles.headerBackText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Request Details</Text>
       </View>
 
-      {error && <ErrorBanner message={error} onDismiss={clearError} />}
-
       <View style={styles.content}>
         {/* Status Card */}
         <View
           style={[
             styles.statusCard,
-            { backgroundColor: STATUS_COLORS[displayRequest.status] + '20' },
+            { backgroundColor: STATUS_COLORS[request.status] + '20' },
           ]}
         >
           <View
             style={[
               styles.statusBadge,
-              { backgroundColor: STATUS_COLORS[displayRequest.status] },
+              { backgroundColor: STATUS_COLORS[request.status] },
             ]}
           >
-            <Text style={styles.statusText}>{displayRequest.status}</Text>
+            <Text style={styles.statusText}>{request.status}</Text>
           </View>
           <Text style={styles.statusDescription}>
-            {STATUS_DESCRIPTIONS[displayRequest.status]}
+            {STATUS_DESCRIPTIONS[request.status]}
           </Text>
         </View>
 
@@ -180,38 +216,34 @@ export default function RequestDetailsScreen() {
         <View style={styles.feeCard}>
           <Text style={styles.feeLabel}>Delivery Fee</Text>
           <Text style={styles.feeAmount}>
-            ${displayRequest.deliveryFee.toFixed(2)}
+            ${request.deliveryFee.toFixed(2)}
           </Text>
         </View>
 
         {/* Locations */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>📍 Pickup Location</Text>
-          <Text style={styles.addressText}>
-            {displayRequest.pickupAddressText}
-          </Text>
+          <Text style={styles.addressText}>{request.pickupAddressText}</Text>
           <Text style={styles.coordsText}>
-            {displayRequest.pickupLocation.coordinates[1].toFixed(6)},{' '}
-            {displayRequest.pickupLocation.coordinates[0].toFixed(6)}
+            {request.pickupLocation.coordinates[1].toFixed(6)},{' '}
+            {request.pickupLocation.coordinates[0].toFixed(6)}
           </Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>🏠 Dropoff Location</Text>
-          <Text style={styles.addressText}>
-            {displayRequest.dropoffAddressText}
-          </Text>
+          <Text style={styles.addressText}>{request.dropoffAddressText}</Text>
           <Text style={styles.coordsText}>
-            {displayRequest.dropoffLocation.coordinates[1].toFixed(6)},{' '}
-            {displayRequest.dropoffLocation.coordinates[0].toFixed(6)}
+            {request.dropoffLocation.coordinates[1].toFixed(6)},{' '}
+            {request.dropoffLocation.coordinates[0].toFixed(6)}
           </Text>
         </View>
 
         {/* Notes */}
-        {displayRequest.notes && (
+        {request.notes && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>📝 Notes</Text>
-            <Text style={styles.notesText}>{displayRequest.notes}</Text>
+            <Text style={styles.notesText}>{request.notes}</Text>
           </View>
         )}
 
@@ -219,24 +251,12 @@ export default function RequestDetailsScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>📅 Created</Text>
           <Text style={styles.metaText}>
-            {new Date(displayRequest.createdAt).toLocaleString()}
+            {new Date(request.createdAt).toLocaleString()}
           </Text>
         </View>
 
-        {/* Cancel Button */}
-        {canCancel && (
-          <TouchableOpacity
-            style={[styles.cancelButton, cancelling && styles.buttonDisabled]}
-            onPress={handleCancel}
-            disabled={cancelling}
-          >
-            {cancelling ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.cancelButtonText}>Cancel Request</Text>
-            )}
-          </TouchableOpacity>
-        )}
+        {/* Action Button */}
+        {renderActionButton()}
       </View>
     </ScrollView>
   );
@@ -248,7 +268,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
   },
   header: {
-    backgroundColor: '#34C759',
+    backgroundColor: '#007AFF',
     paddingTop: 60,
     paddingBottom: 20,
     paddingHorizontal: 24,
@@ -305,7 +325,7 @@ const styles = StyleSheet.create({
   feeAmount: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#34C759',
+    color: '#2e7d32',
   },
   card: {
     backgroundColor: '#fff',
@@ -337,19 +357,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
-  cancelButton: {
-    backgroundColor: '#D32F2F',
-    padding: 16,
+  actionButton: {
+    paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 16,
   },
+  startButton: {
+    backgroundColor: '#007AFF',
+  },
+  deliveredButton: {
+    backgroundColor: '#388E3C',
+  },
   buttonDisabled: {
     opacity: 0.6,
   },
-  cancelButtonText: {
+  actionButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
   },
 });

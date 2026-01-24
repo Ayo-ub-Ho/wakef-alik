@@ -14,12 +14,14 @@ import { AxiosError } from 'axios';
 interface DriverState {
   profile: DriverProfile | null;
   loading: boolean;
+  availabilityLoading: boolean;
   error: string | null;
 }
 
 interface DriverActions {
   fetchProfile: () => Promise<void>;
   saveProfile: (payload: CreateDriverProfilePayload | UpdateDriverProfilePayload) => Promise<void>;
+  toggleAvailability: (isAvailable: boolean) => Promise<void>;
   clearError: () => void;
 }
 
@@ -52,6 +54,7 @@ const getErrorMessage = (error: unknown): string => {
 export const useDriverStore = create<DriverStore>((set, get) => ({
   profile: null,
   loading: false,
+  availabilityLoading: false,
   error: null,
 
   /**
@@ -103,6 +106,22 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     } catch (error) {
       const message = getErrorMessage(error);
       set({ loading: false, error: message });
+      throw error;
+    }
+  },
+
+  /**
+   * Toggle driver availability status
+   */
+  toggleAvailability: async (isAvailable: boolean) => {
+    set({ availabilityLoading: true, error: null });
+
+    try {
+      const updatedProfile = await updateDriverProfile({ isAvailable });
+      set({ profile: updatedProfile, availabilityLoading: false, error: null });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set({ availabilityLoading: false, error: message });
       throw error;
     }
   },

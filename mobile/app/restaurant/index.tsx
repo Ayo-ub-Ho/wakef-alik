@@ -6,10 +6,13 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { useRestaurantStore } from '../../src/stores/restaurant.store';
+import { LoadingView } from '../../src/components/LoadingView';
+import { ErrorBanner } from '../../src/components/ErrorBanner';
 
 export default function RestaurantHomeScreen() {
   const router = useRouter();
@@ -17,7 +20,9 @@ export default function RestaurantHomeScreen() {
   const {
     profile,
     loading: profileLoading,
+    error,
     fetchProfile,
+    clearError,
   } = useRestaurantStore();
 
   // Track if we've already checked profile to avoid loops
@@ -66,22 +71,25 @@ export default function RestaurantHomeScreen() {
 
   // Show loading while checking profile
   if (profileLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#34C759" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
-    );
+    return <LoadingView text="Loading profile..." />;
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Restaurant Home</Text>
         <Text style={styles.subtitle}>
           Welcome, {user?.fullName || 'Restaurant'}!
         </Text>
       </View>
+
+      {error && (
+        <ErrorBanner
+          message={error}
+          onRetry={fetchProfile}
+          onDismiss={clearError}
+        />
+      )}
 
       <View style={styles.content}>
         {profile && (
@@ -143,7 +151,7 @@ export default function RestaurantHomeScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -151,17 +159,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#666',
   },
   header: {
     backgroundColor: '#34C759',

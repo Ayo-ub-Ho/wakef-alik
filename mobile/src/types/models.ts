@@ -97,3 +97,60 @@ export interface CreateRequestPayload {
   deliveryFee: number;
   notes?: string;
 }
+
+// Offer state types
+export type OfferState = 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+
+// Request offer model (from driver perspective)
+export interface RequestOffer {
+  _id: string;
+  requestId: string;
+  driverId: string;
+  state: OfferState;
+  proposedFee?: number;
+  message?: string;
+  sentAt: string;
+  respondedAt?: string;
+  // Populated fields
+  request?: DeliveryRequest & {
+    restaurant?: {
+      restaurantName: string;
+      addressText: string;
+    };
+  };
+}
+
+// Nearby request model (includes distance)
+export interface NearbyRequest {
+  _id: string;
+  restaurantId: string;
+  pickupLocation: GeoJSONPoint;
+  pickupAddressText: string;
+  dropoffLocation: GeoJSONPoint;
+  dropoffAddressText: string;
+  deliveryFee: number;
+  notes?: string;
+  status: DeliveryStatus;
+  createdAt: string;
+  distance?: number; // Distance in meters
+  restaurant?: {
+    restaurantName: string;
+    addressText: string;
+  };
+}
+
+// Active delivery model (driver's accepted delivery)
+export interface ActiveDelivery {
+  _id: string;
+  requestId: string;
+  driverId: string;
+  status: DeliveryStatus;
+  acceptedAt: string;
+  request?: DeliveryRequest & {
+    restaurant?: {
+      restaurantName: string;
+      addressText: string;
+    };
+  };
+}
+

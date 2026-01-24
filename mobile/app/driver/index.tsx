@@ -6,15 +6,27 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Switch,
+  ScrollView,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
 import { useAuthStore } from '../../src/stores/auth.store';
 import { useDriverStore } from '../../src/stores/driver.store';
+import { LoadingView } from '../../src/components/LoadingView';
+import { ErrorBanner } from '../../src/components/ErrorBanner';
 
 export default function DriverHomeScreen() {
   const router = useRouter();
   const { user, logout, loading: authLoading } = useAuthStore();
-  const { profile, loading: profileLoading, fetchProfile } = useDriverStore();
+  const {
+    profile,
+    loading: profileLoading,
+    availabilityLoading,
+    error,
+    fetchProfile,
+    toggleAvailability,
+    clearError,
+  } = useDriverStore();
 
   // Track if we've already checked profile to avoid loops
   const hasCheckedProfile = useRef(false);
@@ -60,18 +72,21 @@ export default function DriverHomeScreen() {
     router.push('/driver/profile' as Href);
   };
 
+  const handleToggleAvailability = async (value: boolean) => {
+    try {
+      await toggleAvailability(value);
+    } catch (err) {
+      console.error('Failed to toggle availability:', err);
+    }
+  };
+
   // Show loading while checking profile
   if (profileLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
-    );
+    return <LoadingView text="Loading profile..." />;
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Driver Home</Text>
         <Text style={styles.subtitle}>
@@ -80,6 +95,7 @@ export default function DriverHomeScreen() {
       </View>
 
       <View style={styles.content}>
+        {error && <ErrorBanner message={error} onDismiss={clearError} />}
         {profile && (
           <View style={styles.profileCard}>
             <Text style={styles.profileTitle}>✅ Profile OK</Text>
@@ -94,10 +110,38 @@ export default function DriverHomeScreen() {
               </Text>
             </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.infoLabel}>Status</Text>
+              <Text style={styles.infoLabel}>Verification</Text>
               <Text style={styles.infoValue}>
-                {profile.isVerified ? 'Verified ✓' : 'Pending Verification'}
+                {profile.isVerified ? 'Verified ✓' : 'Pending'}
               </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Availability Switch */}
+        {profile && (
+          <View style={styles.availabilityCard}>
+            <View style={styles.availabilityInfo}>
+              <Text style={styles.availabilityLabel}>
+                Available for Deliveries
+              </Text>
+              <Text style={styles.availabilityHint}>
+                {profile.isAvailable
+                  ? 'You will appear in nearby searches'
+                  : 'Turn on to receive delivery requests'}
+              </Text>
+            </View>
+            <View style={styles.switchContainer}>
+              {availabilityLoading ? (
+                <ActivityIndicator size="small" color="#007AFF" />
+              ) : (
+                <Switch
+                  value={profile.isAvailable ?? false}
+                  onValueChange={handleToggleAvailability}
+                  trackColor={{ false: '#ccc', true: '#4CD964' }}
+                  thumbColor="#fff"
+                />
+              )}
             </View>
           </View>
         )}
@@ -115,6 +159,31 @@ export default function DriverHomeScreen() {
         <TouchableOpacity style={styles.editButton} onPress={handleEditProfile}>
           <Text style={styles.editButtonText}>Edit Profile</Text>
         </TouchableOpacity>
+
+        <View style={styles.actionsSection}>
+          <Text style={styles.actionsSectionTitle}>Driver Actions</Text>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push('/driver/nearby' as Href)}
+          >
+            <Text style={styles.actionButtonText}>📍 Nearby Requests</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push('/driver/inbox' as Href)}
+          >
+            <Text style={styles.actionButtonText}>📥 Offers Inbox</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push('/driver/deliveries' as Href)}
+          >
+            <Text style={styles.actionButtonText}>🚚 My Deliveries</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.footer}>
@@ -130,7 +199,7 @@ export default function DriverHomeScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -138,17 +207,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#666',
   },
   header: {
     backgroundColor: '#007AFF',
@@ -189,6 +247,38 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
+  availabilityCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  availabilityInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  availabilityLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  availabilityHint: {
+    fontSize: 12,
+    color: '#666',
+  },
+  switchContainer: {
+    minWidth: 50,
+    alignItems: 'center',
+  },
   infoCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -223,6 +313,28 @@ const styles = StyleSheet.create({
   },
   editButtonText: {
     color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  actionsSection: {
+    marginTop: 24,
+  },
+  actionsSectionTitle: {
+    fontSize: 14,
+    color: '#666',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  actionButton: {
+    backgroundColor: '#007AFF',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  actionButtonText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },

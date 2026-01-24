@@ -7,15 +7,17 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter, Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { useRequestsStore } from '../../../src/stores/requests.store';
 import { useRestaurantStore } from '../../../src/stores/restaurant.store';
 import { GeoJSONPoint } from '../../../src/types/models';
+import { ErrorBanner } from '../../../src/components/ErrorBanner';
+
+type LocationErrorType = 'PERMISSION_DENIED' | 'TIMEOUT' | 'UNKNOWN' | null;
 
 export default function NewRequestScreen() {
   const router = useRouter();
@@ -34,25 +36,30 @@ export default function NewRequestScreen() {
   );
   const [deliveryFee, setDeliveryFee] = useState('');
   const [notes, setNotes] = useState('');
-  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState<
+    'pickup' | 'dropoff' | null
+  >(null);
+  const [locationError, setLocationError] = useState<LocationErrorType>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
-  const handleGetPickupLocation = async () => {
-    setLocationLoading(true);
+  const clearValidationError = () => setValidationError(null);
+
+  const handleGetLocation = async (type: 'pickup' | 'dropoff') => {
+    setLocationLoading(type);
+    setLocationError(null);
 
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
 
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Denied',
-          'Location permission is required to get GPS coordinates.',
-        );
-        setLocationLoading(false);
+        setLocationError('PERMISSION_DENIED');
+        setLocationLoading(null);
         return;
       }
 
       const position = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
+        timeInterval: 10000,
       });
 
       const geoPoint: GeoJSONPoint = {
@@ -60,88 +67,106 @@ export default function NewRequestScreen() {
         coordinates: [position.coords.longitude, position.coords.latitude],
       };
 
-      setPickupLocation(geoPoint);
+      if (type === 'pickup') {
+        setPickupLocation(geoPoint);
+      } else {
+        setDropoffLocation(geoPoint);
+      }
     } catch (err) {
       console.error('Location error:', err);
-      Alert.alert('Error', 'Failed to get your location.');
+      const errorMessage = err instanceof Error ? err.message : '';
+      if (errorMessage.includes('timeout')) {
+        setLocationError('TIMEOUT');
+      } else {
+        setLocationError('UNKNOWN');
+      }
     } finally {
-      setLocationLoading(false);
+      setLocationLoading(null);
     }
   };
 
-  const handleGetDropoffLocation = async () => {
-    setLocationLoading(true);
-
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Denied',
-          'Location permission is required to get GPS coordinates.',
-        );
-        setLocationLoading(false);
-        return;
-      }
-
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-
-      const geoPoint: GeoJSONPoint = {
-        type: 'Point',
-        coordinates: [position.coords.longitude, position.coords.latitude],
-      };
-
-      setDropoffLocation(geoPoint);
-    } catch (err) {
-      console.error('Location error:', err);
-      Alert.alert('Error', 'Failed to get your location.');
-    } finally {
-      setLocationLoading(false);
+  const getLocationErrorMessage = (): string => {
+    switch (locationError) {
+      case 'PERMISSION_DENIED':
+        return 'Location permission denied. Please enable location access in your device settings.';
+      case 'TIMEOUT':
+        return 'Location request timed out. Please try again in an open area.';
+      case 'UNKNOWN':
+        return 'Failed to get location. Please try again.';
+      default:
+        return '';
     }
+  };
+
+  const validateForm = (): boolean => {
+    clearValidationError();
+
+    if (!pickupAddressText.trim()) {
+      setValidationError('Please enter a pickup address');
+      return false;
+    }
+
+    if (!pickupLocation) {
+      setValidationError('Please set the pickup location using GPS');
+      return false;
+    }
+
+    if (!dropoffAddressText.trim()) {
+      setValidationError('Please enter a dropoff address');
+      return false;
+    }
+
+    if (!dropoffLocation) {
+      setValidationError('Please set the dropoff location using GPS');
+      return false;
+    }
+
+    const feeValue = parseFloat(deliveryFee);
+    if (!deliveryFee.trim() || isNaN(feeValue) || feeValue < 0) {
+      setValidationError('Please enter a valid delivery fee (0 or greater)');
+      return false;
+    }
+
+    if (!profile?._id) {
+      setValidationError(
+        'Restaurant profile not found. Please set up your profile first.',
+      );
+      return false;
+    }
+
+    return true;
   };
 
   const handleSubmit = async () => {
-    // Validation
-    if (!pickupAddressText.trim()) {
-      Alert.alert('Error', 'Please enter a pickup address');
-      return;
-    }
-    if (!pickupLocation) {
-      Alert.alert('Error', 'Please set the pickup location using GPS');
-      return;
-    }
-    if (!dropoffAddressText.trim()) {
-      Alert.alert('Error', 'Please enter a dropoff address');
-      return;
-    }
-    if (!dropoffLocation) {
-      Alert.alert('Error', 'Please set the dropoff location using GPS');
-      return;
-    }
-    if (!deliveryFee.trim() || isNaN(parseFloat(deliveryFee))) {
-      Alert.alert('Error', 'Please enter a valid delivery fee');
-      return;
-    }
-    if (!profile?._id) {
-      Alert.alert('Error', 'Restaurant profile not found');
+    if (!validateForm()) {
       return;
     }
 
     try {
       clearError();
-      await create({
-        restaurantId: profile._id,
-        pickupLocation,
+      const restaurantId = profile?._id;
+      if (!restaurantId) {
+        setValidationError('Restaurant profile not found');
+        return;
+      }
+      const newRequest = await create({
+        restaurantId,
+        pickupLocation: pickupLocation!,
         pickupAddressText: pickupAddressText.trim(),
-        dropoffLocation,
+        dropoffLocation: dropoffLocation!,
         dropoffAddressText: dropoffAddressText.trim(),
         deliveryFee: parseFloat(deliveryFee),
         notes: notes.trim() || undefined,
       });
 
-      router.replace('/restaurant/requests' as Href);
+      // Navigate to details with the created request data
+      router.replace({
+        pathname: `/restaurant/requests/[id]` as const,
+        params: {
+          id: newRequest._id,
+          data: JSON.stringify(newRequest),
+        },
+      });
     } catch (err) {
       console.error('Create request failed:', err);
     }
@@ -167,10 +192,18 @@ export default function NewRequestScreen() {
           <Text style={styles.title}>New Delivery Request</Text>
         </View>
 
-        {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
+        {(error || validationError) && (
+          <ErrorBanner
+            message={validationError || error || ''}
+            onDismiss={validationError ? clearValidationError : clearError}
+          />
+        )}
+
+        {locationError && (
+          <ErrorBanner
+            message={getLocationErrorMessage()}
+            onDismiss={() => setLocationError(null)}
+          />
         )}
 
         <View style={styles.formContainer}>
@@ -193,15 +226,25 @@ export default function NewRequestScreen() {
             <TouchableOpacity
               style={[
                 styles.gpsButton,
-                locationLoading && styles.buttonDisabled,
+                locationLoading === 'pickup' && styles.buttonDisabled,
+                pickupLocation && styles.gpsButtonSuccess,
               ]}
-              onPress={handleGetPickupLocation}
-              disabled={locationLoading || loading}
+              onPress={() => handleGetLocation('pickup')}
+              disabled={locationLoading !== null || loading}
             >
-              {locationLoading ? (
+              {locationLoading === 'pickup' ? (
                 <ActivityIndicator size="small" color="#34C759" />
               ) : (
-                <Text style={styles.gpsButtonText}>📍 Use Current GPS</Text>
+                <Text
+                  style={[
+                    styles.gpsButtonText,
+                    pickupLocation && styles.gpsButtonTextSuccess,
+                  ]}
+                >
+                  {pickupLocation
+                    ? '✓ Location Set (Tap to Update)'
+                    : '📍 Use Current GPS'}
+                </Text>
               )}
             </TouchableOpacity>
 
@@ -232,15 +275,25 @@ export default function NewRequestScreen() {
             <TouchableOpacity
               style={[
                 styles.gpsButton,
-                locationLoading && styles.buttonDisabled,
+                locationLoading === 'dropoff' && styles.buttonDisabled,
+                dropoffLocation && styles.gpsButtonSuccess,
               ]}
-              onPress={handleGetDropoffLocation}
-              disabled={locationLoading || loading}
+              onPress={() => handleGetLocation('dropoff')}
+              disabled={locationLoading !== null || loading}
             >
-              {locationLoading ? (
+              {locationLoading === 'dropoff' ? (
                 <ActivityIndicator size="small" color="#34C759" />
               ) : (
-                <Text style={styles.gpsButtonText}>📍 Use Current GPS</Text>
+                <Text
+                  style={[
+                    styles.gpsButtonText,
+                    dropoffLocation && styles.gpsButtonTextSuccess,
+                  ]}
+                >
+                  {dropoffLocation
+                    ? '✓ Location Set (Tap to Update)'
+                    : '📍 Use Current GPS'}
+                </Text>
               )}
             </TouchableOpacity>
 
@@ -328,16 +381,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
-  errorContainer: {
-    backgroundColor: '#ffebee',
-    padding: 12,
-    margin: 16,
-    borderRadius: 8,
-  },
-  errorText: {
-    color: '#c62828',
-    textAlign: 'center',
-  },
   formContainer: {
     padding: 16,
   },
@@ -383,9 +426,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  gpsButtonSuccess: {
+    backgroundColor: '#e8f5e9',
+    borderColor: '#2e7d32',
+  },
   gpsButtonText: {
     color: '#34C759',
     fontWeight: '600',
+  },
+  gpsButtonTextSuccess: {
+    color: '#2e7d32',
   },
   coordsText: {
     fontSize: 12,

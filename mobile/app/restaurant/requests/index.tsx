@@ -1,16 +1,18 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   FlatList,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter, Href } from 'expo-router';
+import { useRouter, Href, useFocusEffect } from 'expo-router';
 import { useRequestsStore } from '../../../src/stores/requests.store';
 import { DeliveryRequest, DeliveryStatus } from '../../../src/types/models';
+import { LoadingView } from '../../../src/components/LoadingView';
+import { ErrorBanner } from '../../../src/components/ErrorBanner';
+import { EmptyState } from '../../../src/components/EmptyState';
 
 const STATUS_COLORS: Record<DeliveryStatus, string> = {
   PENDING: '#FFA000',
@@ -23,25 +25,41 @@ const STATUS_COLORS: Record<DeliveryStatus, string> = {
 
 export default function RequestsListScreen() {
   const router = useRouter();
-  const { requests, loading, error, fetchMyRequests } = useRequestsStore();
+  const { requests, loading, error, fetchMyRequests, clearError } =
+    useRequestsStore();
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchMyRequests();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Refresh on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchMyRequests();
+    }, [fetchMyRequests]),
+  );
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchMyRequests();
+    setRefreshing(false);
+  };
 
   const handleNewRequest = () => {
     router.push('/restaurant/requests/new' as Href);
   };
 
-  const handleRequestPress = (id: string) => {
-    router.push(`/restaurant/requests/${id}` as Href);
+  const handleRequestPress = (request: DeliveryRequest) => {
+    router.push({
+      pathname: `/restaurant/requests/[id]` as const,
+      params: {
+        id: request._id,
+        data: JSON.stringify(request),
+      },
+    });
   };
 
   const renderRequest = ({ item }: { item: DeliveryRequest }) => (
     <TouchableOpacity
       style={styles.requestCard}
-      onPress={() => handleRequestPress(item._id)}
+      onPress={() => handleRequestPress(item)}
     >
       <View style={styles.requestHeader}>
         <View
@@ -80,17 +98,45 @@ export default function RequestsListScreen() {
   );
 
   const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No delivery requests yet</Text>
-      <Text style={styles.emptySubtext}>
-        Create your first request to get started
-      </Text>
-    </View>
+    <EmptyState
+      icon="📦"
+      title="No delivery requests yet"
+      description="Create your first request to get started"
+      actionLabel="Create Request"
+      onAction={handleNewRequest}
+    />
   );
+
+  // Show loading only on initial load
+  if (loading && requests.length === 0 && !refreshing) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Delivery Requests</Text>
+          <TouchableOpacity style={styles.newButton} onPress={handleNewRequest}>
+            <Text style={styles.newButtonText}>+ New</Text>
+          </TouchableOpacity>
+        </View>
+        <LoadingView text="Loading requests..." />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>← Back</Text>
+        </TouchableOpacity>
         <Text style={styles.title}>Delivery Requests</Text>
         <TouchableOpacity style={styles.newButton} onPress={handleNewRequest}>
           <Text style={styles.newButtonText}>+ New</Text>
@@ -98,9 +144,11 @@ export default function RequestsListScreen() {
       </View>
 
       {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
+        <ErrorBanner
+          message={error}
+          onRetry={fetchMyRequests}
+          onDismiss={clearError}
+        />
       )}
 
       <FlatList
@@ -108,17 +156,16 @@ export default function RequestsListScreen() {
         keyExtractor={item => item._id}
         renderItem={renderRequest}
         contentContainerStyle={styles.listContent}
-        ListEmptyComponent={!loading ? renderEmpty : null}
+        ListEmptyComponent={renderEmpty}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={fetchMyRequests} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#34C759']}
+            tintColor="#34C759"
+          />
         }
       />
-
-      {loading && requests.length === 0 && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#34C759" />
-        </View>
-      )}
     </View>
   );
 }
@@ -133,6 +180,15 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     paddingHorizontal: 24,
+  },
+  backButton: {
+    marginBottom: 8,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -152,16 +208,6 @@ const styles = StyleSheet.create({
     color: '#34C759',
     fontWeight: '600',
     fontSize: 14,
-  },
-  errorContainer: {
-    backgroundColor: '#ffebee',
-    padding: 12,
-    margin: 16,
-    borderRadius: 8,
-  },
-  errorText: {
-    color: '#c62828',
-    textAlign: 'center',
   },
   listContent: {
     padding: 16,
@@ -227,30 +273,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     textAlign: 'right',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#666',
-  },
-  loadingContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

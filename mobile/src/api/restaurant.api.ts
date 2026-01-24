@@ -6,12 +6,12 @@ import {
 } from '../types/models';
 
 /**
- * Extracts data from various API response shapes:
+ * Unwrap data from various API response shapes:
  * - { success: true, data: {...} }
  * - { data: {...} }
  * - Direct object
  */
-const extractData = <T>(response: unknown): T => {
+function unwrapData<T>(response: unknown): T {
   if (!response || typeof response !== 'object') {
     throw new Error('Invalid response');
   }
@@ -30,14 +30,29 @@ const extractData = <T>(response: unknown): T => {
 
   // Direct object (assume response is the data itself)
   return response as T;
-};
+}
+
+/**
+ * Unwrap array data from various API response shapes
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function unwrapArray<T>(response: unknown): T[] {
+  const data = unwrapData<T[] | { items: T[] }>(response);
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (data && typeof data === 'object' && 'items' in data) {
+    return data.items;
+  }
+  return [];
+}
 
 /**
  * Get current restaurant's profile
  */
 export const getRestaurantProfile = async (): Promise<RestaurantProfile> => {
   const response = await apiClient.get('/api/restaurant/profile');
-  return extractData<RestaurantProfile>(response.data);
+  return unwrapData<RestaurantProfile>(response.data);
 };
 
 /**
@@ -47,7 +62,7 @@ export const createRestaurantProfile = async (
   payload: CreateRestaurantProfilePayload
 ): Promise<RestaurantProfile> => {
   const response = await apiClient.post('/api/restaurant/profile', payload);
-  return extractData<RestaurantProfile>(response.data);
+  return unwrapData<RestaurantProfile>(response.data);
 };
 
 /**
@@ -57,5 +72,5 @@ export const updateRestaurantProfile = async (
   payload: UpdateRestaurantProfilePayload
 ): Promise<RestaurantProfile> => {
   const response = await apiClient.patch('/api/restaurant/profile', payload);
-  return extractData<RestaurantProfile>(response.data);
+  return unwrapData<RestaurantProfile>(response.data);
 };
