@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,30 +9,76 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useDriverOpsStore } from '../../src/stores/driverOps.store';
-import { RequestOffer } from '../../src/types/models';
+import { RequestOffer, OfferState } from '../../src/types/models';
 import { LoadingView } from '../../src/components/LoadingView';
 import { ErrorBanner } from '../../src/components/ErrorBanner';
 import { EmptyState } from '../../src/components/EmptyState';
+import { AxiosError } from 'axios';
+
+const OFFER_STATE_COLORS: Record<OfferState, string> = {
+  SENT: '#1976D2',
+  ACCEPTED: '#388E3C',
+  REJECTED: '#D32F2F',
+  EXPIRED: '#9E9E9E',
+};
 
 export default function InboxScreen() {
   const router = useRouter();
-  const { inbox, loading, error, loadInbox, accept, reject, clearError } =
-    useDriverOpsStore();
+  const {
+    inbox,
+    loading,
+    error,
+    lastSyncedAt,
+    loadInbox,
+    acceptOfferAndSync,
+    rejectOfferAndSync,
+    clearError,
+  } = useDriverOpsStore();
 
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadInbox();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Refresh on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      loadInbox();
+    }, [loadInbox]),
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadInbox();
     setRefreshing(false);
+  };
+
+  /**
+   * Get user-friendly error message from API error
+   */
+  const getErrorMessage = (err: unknown): string => {
+    const axiosError = err as AxiosError<{ message?: string; error?: string }>;
+
+    // Handle specific HTTP status codes
+    if (axiosError.response?.status === 409) {
+      return 'This offer is no longer available. It may have been accepted by another driver or expired.';
+    }
+    if (axiosError.response?.status === 404) {
+      return 'This offer was not found. It may have been removed.';
+    }
+    if (axiosError.response?.status === 403) {
+      return 'You are not authorized to accept this offer.';
+    }
+
+    // Extract message from response
+    if (axiosError.response?.data?.message) {
+      return axiosError.response.data.message;
+    }
+    if (axiosError.response?.data?.error) {
+      return axiosError.response.data.error;
+    }
+
+    return 'Failed to process offer. Please try again.';
   };
 
   const handleAccept = (offer: RequestOffer) => {
@@ -46,10 +92,42 @@ export default function InboxScreen() {
           onPress: async () => {
             setProcessingId(offer._id);
             try {
-              await accept(offer._id);
-              Alert.alert('Success', 'Offer accepted! Check your deliveries.');
+              const acceptedOffer = await acceptOfferAndSync(offer._id);
+              Alert.alert(
+                'Success',
+                'Offer accepted! Navigating to delivery.',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      // Navigate to deliveries, passing request data if available
+                      if (acceptedOffer?.request) {
+                        router.push({
+                          pathname: `/driver/request/[id]` as const,
+                          params: {
+                            id: acceptedOffer.request._id,
+                            data: JSON.stringify(acceptedOffer.request),
+                          },
+                        });
+                      } else {
+                        router.push('/driver/deliveries');
+                      }
+                    },
+                  },
+                ],
+              );
             } catch (err) {
-              console.error('Accept failed:', err);
+              // 409 = offer no longer available (expected race condition)
+              const message = getErrorMessage(err);
+              Alert.alert('Cannot Accept Offer', message, [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    // Refresh inbox to get updated offers
+                    loadInbox();
+                  },
+                },
+              ]);
             } finally {
               setProcessingId(null);
             }
@@ -68,9 +146,16 @@ export default function InboxScreen() {
         onPress: async () => {
           setProcessingId(offer._id);
           try {
-            await reject(offer._id);
+            await rejectOfferAndSync(offer._id);
           } catch (err) {
             console.error('Reject failed:', err);
+            const message = getErrorMessage(err);
+            Alert.alert('Cannot Reject Offer', message, [
+              {
+                text: 'OK',
+                onPress: () => loadInbox(),
+              },
+            ]);
           } finally {
             setProcessingId(null);
           }
@@ -94,7 +179,16 @@ export default function InboxScreen() {
           <Text style={styles.restaurantName}>
             {request?.restaurant?.restaurantName || 'Unknown Restaurant'}
           </Text>
-          <Text style={styles.sentTime}>{formatDate(item.sentAt)}</Text>
+          <View style={styles.headerBadges}>
+            <View
+              style={[
+                styles.stateBadge,
+                { backgroundColor: OFFER_STATE_COLORS[item.state] },
+              ]}
+            >
+              <Text style={styles.stateBadgeText}>{item.state}</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.offerDetails}>
@@ -110,8 +204,8 @@ export default function InboxScreen() {
               {request?.dropoffAddressText || 'N/A'}
             </Text>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>💰 Fee</Text>
+          <View style={styles.feeRow}>
+            <Text style={styles.detailLabel}>💰 Delivery Fee</Text>
             <Text style={styles.feeValue}>
               ${request?.deliveryFee?.toFixed(2) || '0.00'}
             </Text>
@@ -124,31 +218,41 @@ export default function InboxScreen() {
           )}
         </View>
 
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.rejectButton, isProcessing && styles.buttonDisabled]}
-            onPress={() => handleReject(item)}
-            disabled={isProcessing}
-          >
-            {isProcessing && processingId === item._id ? (
-              <ActivityIndicator size="small" color="#D32F2F" />
-            ) : (
-              <Text style={styles.rejectButtonText}>Reject</Text>
-            )}
-          </TouchableOpacity>
+        <Text style={styles.sentTimeText}>Sent: {formatDate(item.sentAt)}</Text>
 
-          <TouchableOpacity
-            style={[styles.acceptButton, isProcessing && styles.buttonDisabled]}
-            onPress={() => handleAccept(item)}
-            disabled={isProcessing}
-          >
-            {isProcessing && processingId === item._id ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.acceptButtonText}>Accept</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        {item.state === 'SENT' && (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[
+                styles.rejectButton,
+                isProcessing && styles.buttonDisabled,
+              ]}
+              onPress={() => handleReject(item)}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <ActivityIndicator size="small" color="#D32F2F" />
+              ) : (
+                <Text style={styles.rejectButtonText}>✕ Reject</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.acceptButton,
+                isProcessing && styles.buttonDisabled,
+              ]}
+              onPress={() => handleAccept(item)}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.acceptButtonText}>✓ Accept</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   };
@@ -157,9 +261,15 @@ export default function InboxScreen() {
     <EmptyState
       icon="📥"
       title="No offers in your inbox"
-      description="Offers from restaurants will appear here. Make sure your availability is turned on."
+      description="Offers from restaurants will appear here. Make sure your availability is turned on and GPS is updated."
     />
   );
+
+  const formatLastSync = () => {
+    if (!lastSyncedAt) return null;
+    const date = new Date(lastSyncedAt);
+    return `Last synced: ${date.toLocaleTimeString()}`;
+  };
 
   return (
     <View style={styles.container}>
@@ -171,9 +281,14 @@ export default function InboxScreen() {
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>📥 Offers Inbox</Text>
-        <Text style={styles.subtitle}>
-          {inbox.length} pending offer{inbox.length !== 1 ? 's' : ''}
-        </Text>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitle}>
+            {inbox.length} pending offer{inbox.length !== 1 ? 's' : ''}
+          </Text>
+          {lastSyncedAt && (
+            <Text style={styles.syncTime}>{formatLastSync()}</Text>
+          )}
+        </View>
       </View>
 
       {error && (
@@ -235,6 +350,16 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 4,
   },
+  subtitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  syncTime: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
   listContent: {
     padding: 16,
     flexGrow: 1,
@@ -256,16 +381,33 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
   },
+  headerBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stateBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  stateBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   restaurantName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
     flex: 1,
+    marginRight: 8,
   },
-  sentTime: {
+  sentTimeText: {
     fontSize: 12,
     color: '#999',
-    marginLeft: 8,
+    marginTop: 8,
+    textAlign: 'right',
   },
   offerDetails: {
     borderTopWidth: 1,
@@ -276,6 +418,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
+  },
+  feeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
   detailLabel: {
     fontSize: 14,

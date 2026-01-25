@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,13 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useDriverOpsStore } from '../../src/stores/driverOps.store';
 import { ActiveDelivery, DeliveryStatus } from '../../src/types/models';
 import { LoadingView } from '../../src/components/LoadingView';
 import { ErrorBanner } from '../../src/components/ErrorBanner';
 import { EmptyState } from '../../src/components/EmptyState';
+import { AxiosError } from 'axios';
 
 const STATUS_COLORS: Record<DeliveryStatus, string> = {
   PENDING: '#FFA000',
@@ -39,10 +40,12 @@ export default function DeliveriesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadActiveDeliveries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Refresh on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      loadActiveDeliveries();
+    }, [loadActiveDeliveries]),
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -50,8 +53,52 @@ export default function DeliveriesScreen() {
     setRefreshing(false);
   };
 
+  /**
+   * Get user-friendly error message from API error
+   */
+  const getErrorMessage = (err: unknown): string => {
+    const axiosError = err as AxiosError<{ message?: string; error?: string }>;
+
+    if (axiosError.response?.status === 400) {
+      const msg =
+        axiosError.response?.data?.message || axiosError.response?.data?.error;
+      if (msg) return msg;
+      return 'Invalid request. The delivery may have already been updated.';
+    }
+    if (axiosError.response?.status === 403) {
+      return 'You are not authorized to update this delivery.';
+    }
+    if (axiosError.response?.status === 404) {
+      return 'Delivery not found. It may have been cancelled.';
+    }
+
+    if (axiosError.response?.data?.message) {
+      return axiosError.response.data.message;
+    }
+    if (axiosError.response?.data?.error) {
+      return axiosError.response.data.error;
+    }
+
+    return 'Failed to update delivery status. Please try again.';
+  };
+
+  /**
+   * Get the request ID from a delivery object
+   * Backend returns DeliveryRequest[] directly, so _id IS the request ID
+   * But also support nested request object for future compatibility
+   */
+  const getRequestId = (delivery: ActiveDelivery): string => {
+    // If nested request exists, use it
+    if (delivery.request?._id) {
+      return delivery.request._id;
+    }
+    // Otherwise the delivery object IS the request (DeliveryRequest)
+    // So its _id is the request ID
+    return delivery._id;
+  };
+
   const handleStartDelivery = (delivery: ActiveDelivery) => {
-    const requestId = delivery.request?._id || delivery.requestId;
+    const requestId = getRequestId(delivery);
     Alert.alert('Start Delivery', 'Are you ready to start this delivery?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -63,6 +110,10 @@ export default function DeliveriesScreen() {
             Alert.alert('Success', 'Delivery started!');
           } catch (err) {
             console.error('Start delivery failed:', err);
+            const message = getErrorMessage(err);
+            Alert.alert('Failed to Start Delivery', message, [
+              { text: 'OK', onPress: () => loadActiveDeliveries() },
+            ]);
           } finally {
             setProcessingId(null);
           }
@@ -72,7 +123,7 @@ export default function DeliveriesScreen() {
   };
 
   const handleMarkDelivered = (delivery: ActiveDelivery) => {
-    const requestId = delivery.request?._id || delivery.requestId;
+    const requestId = getRequestId(delivery);
     Alert.alert('Complete Delivery', 'Has this delivery been completed?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -84,6 +135,10 @@ export default function DeliveriesScreen() {
             Alert.alert('Success', 'Delivery marked as completed!');
           } catch (err) {
             console.error('Mark delivered failed:', err);
+            const message = getErrorMessage(err);
+            Alert.alert('Failed to Complete Delivery', message, [
+              { text: 'OK', onPress: () => loadActiveDeliveries() },
+            ]);
           } finally {
             setProcessingId(null);
           }
@@ -99,7 +154,8 @@ export default function DeliveriesScreen() {
 
   const getActionButton = (delivery: ActiveDelivery) => {
     const isProcessing = processingId === delivery._id;
-    const status = delivery.request?.status || delivery.status;
+    // Backend returns DeliveryRequest directly, status is on the item itself
+    const status = (delivery as any).status || delivery.request?.status;
 
     if (status === 'ACCEPTED') {
       return (
@@ -153,8 +209,26 @@ export default function DeliveriesScreen() {
   };
 
   const renderDelivery = ({ item }: { item: ActiveDelivery }) => {
-    const request = item.request;
-    const status = request?.status || item.status;
+    // Backend returns DeliveryRequest directly, not nested
+    // Handle both cases: item IS the request, or item.request exists
+    const request = item.request || item;
+    const status: DeliveryStatus =
+      (request as any)?.status || item.status || 'ACCEPTED';
+
+    // Get restaurant name from either restaurantId (populated) or nested restaurant
+    const restaurantName =
+      (request as any)?.restaurantId?.restaurantName ||
+      (request as any)?.restaurant?.restaurantName ||
+      'Unknown Restaurant';
+
+    // Get addresses - they exist directly on the request
+    const pickupAddress = (request as any)?.pickupAddressText || 'N/A';
+    const dropoffAddress = (request as any)?.dropoffAddressText || 'N/A';
+    const deliveryFee = (request as any)?.deliveryFee || 0;
+
+    // For acceptedAt, try assignedAt (what backend uses) or acceptedAt
+    const acceptedAt =
+      (item as any)?.assignedAt || item.acceptedAt || new Date().toISOString();
 
     return (
       <TouchableOpacity
@@ -163,16 +237,14 @@ export default function DeliveriesScreen() {
           router.push({
             pathname: `/driver/request/[id]` as const,
             params: {
-              id: request?._id || item.requestId,
-              data: JSON.stringify(request || item),
+              id: getRequestId(item),
+              data: JSON.stringify(item),
             },
           })
         }
       >
         <View style={styles.deliveryHeader}>
-          <Text style={styles.restaurantName}>
-            {request?.restaurant?.restaurantName || 'Unknown Restaurant'}
-          </Text>
+          <Text style={styles.restaurantName}>{restaurantName}</Text>
           <View
             style={[
               styles.statusBadge,
@@ -187,26 +259,22 @@ export default function DeliveriesScreen() {
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>📍 Pickup</Text>
             <Text style={styles.detailValue} numberOfLines={1}>
-              {request?.pickupAddressText || 'N/A'}
+              {pickupAddress}
             </Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>🏠 Dropoff</Text>
             <Text style={styles.detailValue} numberOfLines={1}>
-              {request?.dropoffAddressText || 'N/A'}
+              {dropoffAddress}
             </Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>💰 Fee</Text>
-            <Text style={styles.feeValue}>
-              ${request?.deliveryFee?.toFixed(2) || '0.00'}
-            </Text>
+            <Text style={styles.feeValue}>${deliveryFee.toFixed(2)}</Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>📅 Accepted</Text>
-            <Text style={styles.detailValue}>
-              {formatDate(item.acceptedAt)}
-            </Text>
+            <Text style={styles.detailValue}>{formatDate(acceptedAt)}</Text>
           </View>
         </View>
 

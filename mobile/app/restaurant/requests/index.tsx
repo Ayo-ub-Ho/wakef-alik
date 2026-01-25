@@ -56,19 +56,33 @@ export default function RequestsListScreen() {
     });
   };
 
+  const isDriverAssigned = (item: DeliveryRequest) => {
+    return (
+      item.assignedDriverId != null ||
+      ['ACCEPTED', 'IN_DELIVERY', 'DELIVERED'].includes(item.status)
+    );
+  };
+
   const renderRequest = ({ item }: { item: DeliveryRequest }) => (
     <TouchableOpacity
       style={styles.requestCard}
       onPress={() => handleRequestPress(item)}
     >
       <View style={styles.requestHeader}>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: STATUS_COLORS[item.status] },
-          ]}
-        >
-          <Text style={styles.statusText}>{item.status}</Text>
+        <View style={styles.badgeRow}>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: STATUS_COLORS[item.status] },
+            ]}
+          >
+            <Text style={styles.statusText}>{item.status}</Text>
+          </View>
+          {isDriverAssigned(item) && (
+            <View style={styles.assignedBadge}>
+              <Text style={styles.assignedText}>✅ Assigned</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.feeText}>${item.deliveryFee.toFixed(2)}</Text>
       </View>
@@ -238,6 +252,22 @@ const styles = StyleSheet.create({
   statusText: {
     color: '#fff',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  assignedBadge: {
+    backgroundColor: '#e8f5e9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  assignedText: {
+    color: '#2e7d32',
+    fontSize: 11,
     fontWeight: '600',
   },
   feeText: {

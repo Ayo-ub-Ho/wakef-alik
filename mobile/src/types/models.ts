@@ -84,7 +84,9 @@ export interface DeliveryRequest {
   deliveryFee: number;
   notes?: string;
   status: DeliveryStatus;
+  assignedDriverId?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 // Payload for creating a delivery request

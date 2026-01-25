@@ -30,12 +30,14 @@ export default function NearbyRequestsScreen() {
   const { profile } = useDriverStore();
   const {
     currentLocation,
+    lastSyncedAt,
     nearbyRequests,
     loading,
     locationLoading,
     error,
     refreshLocationAndSync,
     loadNearby,
+    loadInbox,
     clearError,
   } = useDriverOpsStore();
 
@@ -57,6 +59,8 @@ export default function NearbyRequestsScreen() {
     const location = await refreshLocationAndSync();
     if (location && canViewNearby) {
       await loadNearby();
+      // Also refresh inbox since offers may be created after GPS update
+      await loadInbox();
     }
   };
 
@@ -65,8 +69,15 @@ export default function NearbyRequestsScreen() {
     const location = await refreshLocationAndSync();
     if (location && canViewNearby) {
       await loadNearby();
+      await loadInbox();
     }
     setRefreshing(false);
+  };
+
+  const formatLastSync = () => {
+    if (!lastSyncedAt) return null;
+    const date = new Date(lastSyncedAt);
+    return date.toLocaleTimeString();
   };
 
   const formatDistance = (distance?: number): string => {
@@ -127,17 +138,27 @@ export default function NearbyRequestsScreen() {
   );
 
   const renderEmpty = () => (
-    <EmptyState
-      icon="📍"
-      title={currentLocation ? 'No nearby requests' : 'Location required'}
-      description={
-        currentLocation
-          ? 'No delivery requests available in your area right now. Pull to refresh.'
-          : 'Update your location to discover nearby delivery requests.'
-      }
-      actionLabel={currentLocation ? undefined : 'Update Location'}
-      onAction={currentLocation ? undefined : handleUpdateLocation}
-    />
+    <View>
+      <EmptyState
+        icon="📍"
+        title={currentLocation ? 'No nearby requests' : 'Location required'}
+        description={
+          currentLocation
+            ? 'No delivery requests available in your area right now. Pull to refresh.'
+            : 'Update your location to discover nearby delivery requests.'
+        }
+        actionLabel={currentLocation ? undefined : 'Update Location'}
+        onAction={currentLocation ? undefined : handleUpdateLocation}
+      />
+      <View style={styles.hintCard}>
+        <Text style={styles.hintTitle}>💡 Not seeing requests?</Text>
+        <Text style={styles.hintText}>
+          • Ensure your availability is turned ON{'\n'}• Verify your profile is
+          approved{'\n'}• Restaurant must be verified{'\n'}• Your GPS must be
+          close to pickup location
+        </Text>
+      </View>
+    </View>
   );
 
   // Show eligibility gate if not allowed to view nearby
@@ -201,10 +222,17 @@ export default function NearbyRequestsScreen() {
         <View style={styles.locationInfo}>
           <Text style={styles.locationLabel}>Your Location</Text>
           {currentLocation ? (
-            <Text style={styles.locationValue}>
-              {currentLocation.coordinates[1].toFixed(5)},{' '}
-              {currentLocation.coordinates[0].toFixed(5)}
-            </Text>
+            <>
+              <Text style={styles.locationValue}>
+                {currentLocation.coordinates[1].toFixed(5)},{' '}
+                {currentLocation.coordinates[0].toFixed(5)}
+              </Text>
+              {lastSyncedAt && (
+                <Text style={styles.syncTime}>
+                  Last sync: {formatLastSync()}
+                </Text>
+              )}
+            </>
           ) : (
             <Text style={styles.locationMissing}>Not set</Text>
           )}
@@ -220,7 +248,7 @@ export default function NearbyRequestsScreen() {
           {locationLoading ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Text style={styles.updateLocationText}>Update</Text>
+            <Text style={styles.updateLocationText}>📍 Update GPS</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -299,6 +327,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     fontFamily: 'monospace',
+  },
+  syncTime: {
+    fontSize: 11,
+    color: '#666',
+    marginTop: 4,
   },
   locationMissing: {
     fontSize: 14,
@@ -394,5 +427,25 @@ const styles = StyleSheet.create({
   viewDetailsText: {
     color: '#007AFF',
     fontWeight: '600',
+  },
+  hintCard: {
+    backgroundColor: '#FFF8E1',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFE082',
+  },
+  hintTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#F57C00',
+    marginBottom: 8,
+  },
+  hintText: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 20,
   },
 });

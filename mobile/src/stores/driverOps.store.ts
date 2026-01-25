@@ -45,6 +45,10 @@ interface DriverOpsActions {
   loadActiveDeliveries: () => Promise<void>;
   accept: (offerId: string) => Promise<void>;
   reject: (offerId: string) => Promise<void>;
+  /** Accept offer and sync all lists - returns the accepted offer */
+  acceptOfferAndSync: (offerId: string) => Promise<RequestOffer | null>;
+  /** Reject offer and refresh inbox */
+  rejectOfferAndSync: (offerId: string) => Promise<void>;
   updateStatus: (requestId: string, status: DeliveryStatus) => Promise<void>;
   clearError: () => void;
   clearLocationError: () => void;
@@ -268,6 +272,62 @@ export const useDriverOpsStore = create<DriverOpsStore>((set, get) => ({
         loading: false,
         error: null,
       });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set({ loading: false, error: message });
+      throw error;
+    }
+  },
+
+  /**
+   * Accept offer and sync all related lists
+   * Returns the accepted offer with request data for navigation
+   */
+  acceptOfferAndSync: async (offerId: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      const acceptedOffer = await acceptOffer(offerId);
+
+      // Remove from inbox immediately
+      const currentInbox = get().inbox;
+      set({
+        inbox: currentInbox.filter((o) => o._id !== offerId),
+        loading: false,
+        error: null,
+      });
+
+      // Refresh active deliveries and inbox in background
+      get().loadActiveDeliveries();
+      get().loadInbox();
+
+      return acceptedOffer;
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set({ loading: false, error: message });
+      throw error;
+    }
+  },
+
+  /**
+   * Reject offer and refresh inbox
+   */
+  rejectOfferAndSync: async (offerId: string) => {
+    set({ loading: true, error: null });
+
+    try {
+      await rejectOffer(offerId);
+
+      // Remove from inbox immediately
+      const currentInbox = get().inbox;
+      set({
+        inbox: currentInbox.filter((o) => o._id !== offerId),
+        loading: false,
+        error: null,
+      });
+
+      // Refresh inbox in background
+      get().loadInbox();
     } catch (error) {
       const message = getErrorMessage(error);
       set({ loading: false, error: message });

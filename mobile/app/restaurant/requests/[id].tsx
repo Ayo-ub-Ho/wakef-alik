@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -33,6 +33,10 @@ const STATUS_DESCRIPTIONS: Record<DeliveryStatus, string> = {
   CANCELLED: 'This request has been cancelled',
 };
 
+// Statuses that should auto-refresh
+const AUTO_REFRESH_STATUSES: DeliveryStatus[] = ['PENDING', 'PROPOSED'];
+const AUTO_REFRESH_INTERVAL = 6000; // 6 seconds
+
 export default function RequestDetailsScreen() {
   const router = useRouter();
   const { id, data } = useLocalSearchParams<{ id: string; data?: string }>();
@@ -48,6 +52,34 @@ export default function RequestDetailsScreen() {
 
   const [request, setRequest] = useState<DeliveryRequest | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Check if driver is assigned
+  const isDriverAssigned = useCallback((req: DeliveryRequest | null) => {
+    if (!req) return false;
+    return (
+      !!req.assignedDriverId ||
+      ['ACCEPTED', 'IN_DELIVERY', 'DELIVERED'].includes(req.status)
+    );
+  }, []);
+
+  // Check if should auto-refresh
+  const shouldAutoRefresh = useCallback((req: DeliveryRequest | null) => {
+    if (!req) return false;
+    return AUTO_REFRESH_STATUSES.includes(req.status);
+  }, []);
+
+  // Manual refresh handler
+  const handleRefresh = async () => {
+    if (!id || refreshing) return;
+    setRefreshing(true);
+    try {
+      await fetchRequestById(id);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     // If data is passed via params, use it directly
@@ -67,6 +99,10 @@ export default function RequestDetailsScreen() {
 
     return () => {
       clearCurrent();
+      // Clear auto-refresh on unmount
+      if (autoRefreshRef.current) {
+        clearInterval(autoRefreshRef.current);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, data]);
@@ -77,6 +113,30 @@ export default function RequestDetailsScreen() {
       setRequest(current);
     }
   }, [current, id]);
+
+  // Setup auto-refresh based on status
+  useEffect(() => {
+    const displayRequest = request || current;
+
+    // Clear existing interval
+    if (autoRefreshRef.current) {
+      clearInterval(autoRefreshRef.current);
+      autoRefreshRef.current = null;
+    }
+
+    // Setup new interval if needed
+    if (id && shouldAutoRefresh(displayRequest)) {
+      autoRefreshRef.current = setInterval(() => {
+        fetchRequestById(id);
+      }, AUTO_REFRESH_INTERVAL);
+    }
+
+    return () => {
+      if (autoRefreshRef.current) {
+        clearInterval(autoRefreshRef.current);
+      }
+    };
+  }, [id, request, current, shouldAutoRefresh, fetchRequestById]);
 
   const displayRequest = request || current;
   const canCancel =
@@ -150,7 +210,25 @@ export default function RequestDetailsScreen() {
         >
           <Text style={styles.headerBackText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Request Details</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Request Details</Text>
+          <TouchableOpacity
+            style={[styles.refreshButton, refreshing && styles.buttonDisabled]}
+            onPress={handleRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.refreshButtonText}>🔄 Refresh</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+        {shouldAutoRefresh(displayRequest) && (
+          <Text style={styles.autoRefreshHint}>
+            Auto-refreshing every 6s...
+          </Text>
+        )}
       </View>
 
       {error && <ErrorBanner message={error} onDismiss={clearError} />}
@@ -183,6 +261,31 @@ export default function RequestDetailsScreen() {
             ${displayRequest.deliveryFee.toFixed(2)}
           </Text>
         </View>
+
+        {/* Driver Assigned Card */}
+        {isDriverAssigned(displayRequest) && (
+          <View style={styles.driverCard}>
+            <Text style={styles.driverCardTitle}>🚚 Driver Assigned ✅</Text>
+            <Text style={styles.driverCardText}>
+              A driver has accepted this delivery request.
+            </Text>
+            {displayRequest.assignedDriverId && (
+              <>
+                {typeof displayRequest.assignedDriverId === 'object' ? (
+                  <Text style={styles.driverCardText}>
+                    Vehicle:{' '}
+                    {(displayRequest.assignedDriverId as any).vehicleType ||
+                      'Unknown'}
+                  </Text>
+                ) : (
+                  <Text style={styles.driverIdText}>
+                    Driver ID: {displayRequest.assignedDriverId}
+                  </Text>
+                )}
+              </>
+            )}
+          </View>
+        )}
 
         {/* Locations */}
         <View style={styles.card}>
@@ -260,10 +363,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  refreshButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  refreshButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  autoRefreshHint: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12,
+    marginTop: 8,
   },
   content: {
     padding: 16,
@@ -306,6 +430,30 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: '#34C759',
+  },
+  driverCard: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#c8e6c9',
+  },
+  driverCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    marginBottom: 8,
+  },
+  driverCardText: {
+    fontSize: 14,
+    color: '#388e3c',
+    marginBottom: 4,
+  },
+  driverIdText: {
+    fontSize: 12,
+    color: '#666',
+    fontFamily: 'monospace',
   },
   card: {
     backgroundColor: '#fff',
