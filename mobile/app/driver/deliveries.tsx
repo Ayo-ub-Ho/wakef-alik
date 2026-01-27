@@ -1,29 +1,54 @@
+/**
+ * Deliveries Screen - Stitch Style
+ * Shows active deliveries for the driver
+ */
 import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   FlatList,
-  ActivityIndicator,
   RefreshControl,
   Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useDriverOpsStore } from '../../src/stores/driverOps.store';
 import { ActiveDelivery, DeliveryStatus } from '../../src/types/models';
+import { AppScreen } from '../../src/components/ui/AppScreen';
+import { Card } from '../../src/components/ui/Card';
+import { SectionHeader } from '../../src/components/ui/SectionHeader';
+import { PrimaryButton } from '../../src/components/ui/PrimaryButton';
 import { LoadingView } from '../../src/components/LoadingView';
 import { ErrorBanner } from '../../src/components/ErrorBanner';
-import { EmptyState } from '../../src/components/EmptyState';
+import { colors, typography, spacing, radius } from '../../src/theme/tokens';
 import { AxiosError } from 'axios';
 
-const STATUS_COLORS: Record<DeliveryStatus, string> = {
-  PENDING: '#FFA000',
-  PROPOSED: '#1976D2',
-  ACCEPTED: '#7B1FA2',
-  IN_DELIVERY: '#0097A7',
-  DELIVERED: '#388E3C',
-  CANCELLED: '#D32F2F',
+const STATUS_STYLES: Record<
+  DeliveryStatus,
+  { bg: string; text: string; label: string }
+> = {
+  PENDING: { bg: colors.warningLight, text: colors.warning, label: 'Pending' },
+  PROPOSED: { bg: colors.infoLight, text: colors.info, label: 'Proposed' },
+  ACCEPTED: {
+    bg: '#F3E5F5',
+    text: colors.statusAccepted,
+    label: 'Ready to Start',
+  },
+  IN_DELIVERY: {
+    bg: '#E0F7FA',
+    text: colors.statusInDelivery,
+    label: 'In Progress',
+  },
+  DELIVERED: {
+    bg: colors.successLight,
+    text: colors.success,
+    label: 'Completed',
+  },
+  CANCELLED: {
+    bg: colors.dangerLight,
+    text: colors.danger,
+    label: 'Cancelled',
+  },
 };
 
 export default function DeliveriesScreen() {
@@ -84,16 +109,11 @@ export default function DeliveriesScreen() {
 
   /**
    * Get the request ID from a delivery object
-   * Backend returns DeliveryRequest[] directly, so _id IS the request ID
-   * But also support nested request object for future compatibility
    */
   const getRequestId = (delivery: ActiveDelivery): string => {
-    // If nested request exists, use it
     if (delivery.request?._id) {
       return delivery.request._id;
     }
-    // Otherwise the delivery object IS the request (DeliveryRequest)
-    // So its _id is the request ID
     return delivery._id;
   };
 
@@ -147,175 +167,150 @@ export default function DeliveriesScreen() {
     ]);
   };
 
-  const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleString();
-  };
-
-  const getActionButton = (delivery: ActiveDelivery) => {
-    const isProcessing = processingId === delivery._id;
-    // Backend returns DeliveryRequest directly, status is on the item itself
-    const status = (delivery as any).status || delivery.request?.status;
-
-    if (status === 'ACCEPTED') {
-      return (
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            styles.startButton,
-            isProcessing && styles.buttonDisabled,
-          ]}
-          onPress={() => handleStartDelivery(delivery)}
-          disabled={isProcessing}
-        >
-          {isProcessing ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.actionButtonText}>🚚 Start Delivery</Text>
-          )}
-        </TouchableOpacity>
-      );
-    }
-
-    if (status === 'IN_DELIVERY') {
-      return (
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            styles.deliveredButton,
-            isProcessing && styles.buttonDisabled,
-          ]}
-          onPress={() => handleMarkDelivered(delivery)}
-          disabled={isProcessing}
-        >
-          {isProcessing ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.actionButtonText}>✅ Mark Delivered</Text>
-          )}
-        </TouchableOpacity>
-      );
-    }
-
-    if (status === 'DELIVERED') {
-      return (
-        <View style={styles.completedBadge}>
-          <Text style={styles.completedText}>✓ Completed</Text>
-        </View>
-      );
-    }
-
-    return null;
-  };
-
   const renderDelivery = ({ item }: { item: ActiveDelivery }) => {
-    // Backend returns DeliveryRequest directly, not nested
-    // Handle both cases: item IS the request, or item.request exists
     const request = item.request || item;
     const status: DeliveryStatus =
       (request as any)?.status || item.status || 'ACCEPTED';
 
-    // Get restaurant name from either restaurantId (populated) or nested restaurant
     const restaurantName =
       (request as any)?.restaurantId?.restaurantName ||
       (request as any)?.restaurant?.restaurantName ||
-      'Unknown Restaurant';
+      'Restaurant';
 
-    // Get addresses - they exist directly on the request
     const pickupAddress = (request as any)?.pickupAddressText || 'N/A';
     const dropoffAddress = (request as any)?.dropoffAddressText || 'N/A';
     const deliveryFee = (request as any)?.deliveryFee || 0;
 
-    // For acceptedAt, try assignedAt (what backend uses) or acceptedAt
-    const acceptedAt =
-      (item as any)?.assignedAt || item.acceptedAt || new Date().toISOString();
+    const statusStyle = STATUS_STYLES[status] || STATUS_STYLES.ACCEPTED;
+    const isProcessing = processingId === item._id;
 
     return (
-      <TouchableOpacity
-        style={styles.deliveryCard}
-        onPress={() =>
-          router.push({
-            pathname: `/driver/request/[id]` as const,
-            params: {
-              id: getRequestId(item),
-              data: JSON.stringify(item),
-            },
-          })
-        }
-      >
-        <View style={styles.deliveryHeader}>
+      <Card style={styles.deliveryCard}>
+        {/* Header with status badge */}
+        <View style={styles.cardHeader}>
           <Text style={styles.restaurantName}>{restaurantName}</Text>
           <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: STATUS_COLORS[status] },
-            ]}
+            style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}
           >
-            <Text style={styles.statusText}>{status}</Text>
+            <Text style={[styles.statusText, { color: statusStyle.text }]}>
+              {statusStyle.label}
+            </Text>
           </View>
         </View>
 
-        <View style={styles.deliveryDetails}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>📍 Pickup</Text>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {pickupAddress}
-            </Text>
+        {/* Fee */}
+        <View style={styles.feeRow}>
+          <Text style={styles.feeAmount}>{Math.round(deliveryFee)} MAD</Text>
+          <Text style={styles.feeLabel}>Delivery Fee</Text>
+        </View>
+
+        {/* Locations */}
+        <View style={styles.locationsSection}>
+          <View style={styles.locationRow}>
+            <Text style={styles.locationIcon}>🏪</Text>
+            <View style={styles.locationTextContainer}>
+              <Text style={styles.locationLabel}>PICKUP</Text>
+              <Text style={styles.locationAddress} numberOfLines={1}>
+                {pickupAddress}
+              </Text>
+            </View>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>🏠 Dropoff</Text>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {dropoffAddress}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>💰 Fee</Text>
-            <Text style={styles.feeValue}>${deliveryFee.toFixed(2)}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>📅 Accepted</Text>
-            <Text style={styles.detailValue}>{formatDate(acceptedAt)}</Text>
+
+          <View style={styles.locationRow}>
+            <Text style={styles.locationIcon}>📍</Text>
+            <View style={styles.locationTextContainer}>
+              <Text style={styles.locationLabel}>DROP-OFF</Text>
+              <Text style={styles.locationAddress} numberOfLines={1}>
+                {dropoffAddress}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {getActionButton(item)}
-      </TouchableOpacity>
+        {/* Action Button */}
+        {status === 'ACCEPTED' && (
+          <View style={styles.actionRow}>
+            <PrimaryButton
+              title="🚚 Start Delivery"
+              onPress={() => handleStartDelivery(item)}
+              loading={isProcessing}
+              disabled={isProcessing}
+              style={styles.actionButton}
+            />
+          </View>
+        )}
+
+        {status === 'IN_DELIVERY' && (
+          <View style={styles.actionRow}>
+            <PrimaryButton
+              title="✅ Mark Delivered"
+              onPress={() => handleMarkDelivered(item)}
+              loading={isProcessing}
+              disabled={isProcessing}
+              style={styles.actionButton}
+            />
+          </View>
+        )}
+
+        {status === 'DELIVERED' && (
+          <View style={styles.completedRow}>
+            <Text style={styles.completedIcon}>✓</Text>
+            <Text style={styles.completedText}>Completed</Text>
+          </View>
+        )}
+      </Card>
     );
   };
 
   const renderEmpty = () => (
-    <EmptyState
-      icon="🚚"
-      title="No active deliveries"
-      description="Accept offers to start delivering"
-      actionLabel="Check Inbox"
-      onAction={() => router.push('/driver/inbox')}
-    />
+    <View style={styles.emptyContainer}>
+      <Card style={styles.emptyCard}>
+        <Text style={styles.emptyIcon}>🚚</Text>
+        <Text style={styles.emptyTitle}>No active deliveries</Text>
+        <Text style={styles.emptyText}>Accept offers to start delivering</Text>
+        <PrimaryButton
+          title="Check Inbox"
+          onPress={() => router.push('/driver/inbox')}
+          style={styles.emptyButton}
+        />
+      </Card>
+    </View>
   );
 
+  // Count active (non-completed) deliveries
+  const activeCount = activeDeliveries.filter(d => {
+    const status = (d.request as any)?.status || (d as any).status;
+    return status !== 'DELIVERED' && status !== 'CANCELLED';
+  }).length;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>🚚 My Deliveries</Text>
+    <AppScreen tabBarPadding noPadding>
+      {/* Header */}
+      <View style={styles.headerSection}>
+        <Text style={styles.title}>My Deliveries</Text>
         <Text style={styles.subtitle}>
-          {activeDeliveries.length} active delivery
-          {activeDeliveries.length !== 1 ? 's' : ''}
+          {activeCount > 0
+            ? `${activeCount} active delivery${activeCount !== 1 ? 'ies' : ''}`
+            : 'No active deliveries'}
         </Text>
       </View>
 
       {error && (
-        <ErrorBanner
-          message={error}
-          onRetry={loadActiveDeliveries}
-          onDismiss={clearError}
-        />
+        <View style={styles.errorPadding}>
+          <ErrorBanner
+            message={error}
+            onRetry={loadActiveDeliveries}
+            onDismiss={clearError}
+          />
+        </View>
       )}
+
+      <View style={styles.content}>
+        <SectionHeader
+          title="Active"
+          badge={activeCount > 0 ? `${activeCount}` : undefined}
+        />
+      </View>
 
       {loading && !refreshing && activeDeliveries.length === 0 ? (
         <LoadingView text="Loading deliveries..." />
@@ -326,142 +321,169 @@ export default function DeliveriesScreen() {
           renderItem={renderDelivery}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              colors={['#007AFF']}
-              tintColor="#007AFF"
+              colors={[colors.primary]}
+              tintColor={colors.primary}
             />
           }
         />
       )}
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  header: {
-    backgroundColor: '#007AFF',
-    paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 24,
-  },
-  backButton: {
-    marginBottom: 12,
-  },
-  backText: {
-    color: '#fff',
-    fontSize: 16,
+  headerSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: typography.size.title,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
   },
   subtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 4,
+    fontSize: typography.size.md,
+    color: colors.muted,
+    marginTop: spacing.xs,
+  },
+  errorPadding: {
+    paddingHorizontal: spacing.lg,
+  },
+  content: {
+    paddingHorizontal: spacing.lg,
   },
   listContent: {
-    padding: 16,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxxl,
     flexGrow: 1,
   },
   deliveryCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: spacing.lg,
   },
-  deliveryHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: spacing.lg,
   },
   restaurantName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
     flex: 1,
   },
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+    marginLeft: spacing.sm,
   },
   statusText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: 'bold',
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  deliveryDetails: {
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingTop: 12,
+  feeRow: {
+    marginBottom: spacing.lg,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  detailRow: {
+  feeAmount: {
+    fontSize: 24,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  feeLabel: {
+    fontSize: typography.size.sm,
+    color: colors.muted,
+  },
+  locationsSection: {
+    marginBottom: spacing.lg,
+  },
+  locationRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
   },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  detailValue: {
-    fontSize: 14,
-    color: '#333',
-    flex: 1,
-    textAlign: 'right',
-    marginLeft: 12,
-  },
-  feeValue: {
+  locationIcon: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2e7d32',
+    marginRight: spacing.md,
+    marginTop: 2,
+  },
+  locationTextContainer: {
+    flex: 1,
+  },
+  locationLabel: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.semibold,
+    color: colors.muted,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  locationAddress: {
+    fontSize: typography.size.md,
+    color: colors.text,
+  },
+  actionRow: {
+    marginTop: spacing.md,
   },
   actionButton: {
-    paddingVertical: 14,
-    borderRadius: 8,
+    width: '100%',
+  },
+  completedRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'center',
+    backgroundColor: colors.successLight,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    marginTop: spacing.md,
   },
-  startButton: {
-    backgroundColor: '#007AFF',
-  },
-  deliveredButton: {
-    backgroundColor: '#388E3C',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  completedBadge: {
-    backgroundColor: '#e8f5e9',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 12,
+  completedIcon: {
+    fontSize: 18,
+    color: colors.success,
+    marginRight: spacing.sm,
   },
   completedText: {
-    color: '#2e7d32',
-    fontWeight: '600',
-    fontSize: 16,
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.success,
+  },
+  emptyContainer: {
+    flex: 1,
+    paddingTop: spacing.xl,
+  },
+  emptyCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxxl,
+  },
+  emptyIcon: {
+    fontSize: 56,
+    marginBottom: spacing.lg,
+  },
+  emptyTitle: {
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  emptyText: {
+    fontSize: typography.size.md,
+    color: colors.muted,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  emptyButton: {
+    marginTop: spacing.md,
   },
 });

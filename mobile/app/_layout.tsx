@@ -40,9 +40,9 @@ export default function RootLayout() {
     const inRestaurantGroup = segments[0] === 'restaurant';
 
     if (!isAuthenticated) {
-      // Not authenticated, redirect to login
+      // Not authenticated, redirect to welcome
       if (!inAuthGroup) {
-        router.replace('/(auth)/login' as Href);
+        router.replace('/(auth)/welcome' as Href);
       }
     } else {
       // Authenticated, redirect based on role

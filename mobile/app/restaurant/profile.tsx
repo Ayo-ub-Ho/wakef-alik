@@ -1,323 +1,431 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  ScrollView,
-  Alert,
-} from 'react-native';
-import { useRouter, Href } from 'expo-router';
-import * as Location from 'expo-location';
+/**
+ * Restaurant Profile Screen - Stitch Style
+ * Display restaurant information, verification status, and latest request
+ */
+import React, { useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { useRouter, Href, useFocusEffect } from 'expo-router';
+import { useAuthStore } from '../../src/stores/auth.store';
 import { useRestaurantStore } from '../../src/stores/restaurant.store';
-import { GeoJSONPoint } from '../../src/types/models';
+import { useRequestsStore } from '../../src/stores/requests.store';
+import { DeliveryStatus } from '../../src/types/models';
+import { AppScreen } from '../../src/components/ui/AppScreen';
+import { Card } from '../../src/components/ui/Card';
+import { SectionHeader } from '../../src/components/ui/SectionHeader';
+import { PrimaryButton } from '../../src/components/ui/PrimaryButton';
+import { SecondaryButton } from '../../src/components/ui/SecondaryButton';
+import { LoadingView } from '../../src/components/LoadingView';
+import { ErrorBanner } from '../../src/components/ErrorBanner';
+import { EmptyState } from '../../src/components/EmptyState';
+import { colors, typography, spacing, radius } from '../../src/theme/tokens';
+
+const STATUS_STYLES: Record<
+  DeliveryStatus,
+  { bg: string; text: string; label: string }
+> = {
+  PENDING: { bg: colors.warningLight, text: colors.warning, label: 'Pending' },
+  PROPOSED: { bg: colors.infoLight, text: colors.info, label: 'Proposed' },
+  ACCEPTED: { bg: '#F3E5F5', text: '#7B1FA2', label: 'Accepted' },
+  IN_DELIVERY: { bg: '#E0F7FA', text: '#0097A7', label: 'In Delivery' },
+  DELIVERED: {
+    bg: colors.successLight,
+    text: colors.success,
+    label: 'Delivered',
+  },
+  CANCELLED: {
+    bg: colors.dangerLight,
+    text: colors.danger,
+    label: 'Cancelled',
+  },
+};
 
 export default function RestaurantProfileScreen() {
   const router = useRouter();
-  const { profile, loading, error, saveProfile, fetchProfile, clearError } =
-    useRestaurantStore();
+  const { logout, loading: authLoading } = useAuthStore();
+  const {
+    profile,
+    loading: profileLoading,
+    error,
+    fetchProfile,
+    clearError,
+  } = useRestaurantStore();
+  const { requests, fetchMyRequests } = useRequestsStore();
 
-  const [restaurantName, setRestaurantName] = useState('');
-  const [ownerName, setOwnerName] = useState('');
-  const [addressText, setAddressText] = useState('');
-  const [location, setLocation] = useState<GeoJSONPoint | null>(null);
-  const [locationLoading, setLocationLoading] = useState(false);
+  // Fetch data on focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+      fetchMyRequests();
+    }, [fetchProfile, fetchMyRequests]),
+  );
 
-  // Load existing profile data if available
+  // Redirect to edit if no profile
   useEffect(() => {
-    fetchProfile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Populate form with existing profile data
-  useEffect(() => {
-    if (profile) {
-      setRestaurantName(profile.restaurantName);
-      setOwnerName(profile.ownerName);
-      setAddressText(profile.addressText);
-      setLocation(profile.location);
+    if (!profileLoading && profile === null) {
+      router.replace('/restaurant/profile-edit' as Href);
     }
-  }, [profile]);
+  }, [profile, profileLoading, router]);
 
-  const handleGetLocation = async () => {
-    setLocationLoading(true);
-
-    try {
-      // Request permissions
-      const { status } = await Location.requestForegroundPermissionsAsync();
-
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Denied',
-          'Location permission is required to get your GPS coordinates. Please enable it in settings.',
-          [{ text: 'OK' }],
-        );
-        setLocationLoading(false);
-        return;
-      }
-
-      // Get current position
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-
-      const geoPoint: GeoJSONPoint = {
-        type: 'Point',
-        coordinates: [position.coords.longitude, position.coords.latitude],
-      };
-
-      setLocation(geoPoint);
-    } catch (err) {
-      console.error('Location error:', err);
-      Alert.alert(
-        'Location Error',
-        'Failed to get your location. Please try again.',
-        [{ text: 'OK' }],
-      );
-    } finally {
-      setLocationLoading(false);
-    }
+  const handleEditProfile = () => {
+    router.push('/restaurant/profile-edit' as Href);
   };
 
-  const handleSave = async () => {
-    // Basic validation
-    if (!restaurantName.trim() || !ownerName.trim() || !addressText.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    if (!location) {
-      Alert.alert('Error', 'Please set your location using the GPS button');
-      return;
-    }
-
-    try {
-      clearError();
-      await saveProfile({
-        restaurantName: restaurantName.trim(),
-        ownerName: ownerName.trim(),
-        addressText: addressText.trim(),
-        location,
-      });
-      router.replace('/restaurant' as Href);
-    } catch (err) {
-      // Error is already set in store
-      console.error('Save profile failed:', err);
-    }
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          router.replace('/(auth)/login' as Href);
+        },
+      },
+    ]);
   };
+
+  // Get latest non-delivered request
+  const latestActiveRequest = requests.find(
+    r => !['DELIVERED', 'CANCELLED'].includes(r.status),
+  );
+
+  if (profileLoading) {
+    return <LoadingView text="Loading profile..." />;
+  }
+
+  if (!profile) {
+    return null; // Will redirect to edit
+  }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-    >
+    <AppScreen scroll>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Restaurant Profile</Text>
-        <Text style={styles.subtitle}>
-          {profile ? 'Update your profile' : 'Complete your profile to start'}
-        </Text>
+        <Text style={styles.logo}>🍽️</Text>
+        <Text style={styles.subtitle}>Restaurant Profile</Text>
       </View>
 
       {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
+        <ErrorBanner
+          message={error}
+          onRetry={fetchProfile}
+          onDismiss={clearError}
+        />
       )}
 
-      <View style={styles.formContainer}>
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Restaurant Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter restaurant name"
-            placeholderTextColor="#999"
-            value={restaurantName}
-            onChangeText={setRestaurantName}
-            editable={!loading}
-          />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Owner Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter owner name"
-            placeholderTextColor="#999"
-            value={ownerName}
-            onChangeText={setOwnerName}
-            editable={!loading}
-          />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Address</Text>
-          <TextInput
-            style={[styles.input, styles.addressInput]}
-            placeholder="Enter full address"
-            placeholderTextColor="#999"
-            value={addressText}
-            onChangeText={setAddressText}
-            multiline
-            numberOfLines={3}
-            editable={!loading}
-          />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Location</Text>
-
-          <TouchableOpacity
+      {/* Verification Status Card */}
+      <Card
+        style={[
+          styles.verificationCard,
+          {
+            backgroundColor: profile.isVerified
+              ? colors.successLight
+              : colors.warningLight,
+          },
+        ]}
+      >
+        <View style={styles.verificationHeader}>
+          <Text style={styles.verificationIcon}>
+            {profile.isVerified ? '✅' : '⏳'}
+          </Text>
+          <View
             style={[
-              styles.locationButton,
-              locationLoading && styles.buttonDisabled,
+              styles.verificationBadge,
+              {
+                backgroundColor: profile.isVerified
+                  ? colors.success
+                  : colors.warning,
+              },
             ]}
-            onPress={handleGetLocation}
-            disabled={locationLoading || loading}
           >
-            {locationLoading ? (
-              <ActivityIndicator color="#007AFF" />
-            ) : (
-              <Text style={styles.locationButtonText}>
-                📍 Use Current GPS Location
-              </Text>
-            )}
-          </TouchableOpacity>
+            <Text style={styles.verificationBadgeText}>
+              {profile.isVerified ? 'VERIFIED' : 'PENDING'}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.verificationTitle}>
+          {profile.isVerified
+            ? 'Your restaurant is verified'
+            : 'Awaiting verification'}
+        </Text>
+        <Text style={styles.verificationSubtitle}>
+          {profile.isVerified
+            ? 'You can create delivery requests'
+            : 'An admin will review your profile soon'}
+        </Text>
+      </Card>
 
-          {location && (
-            <View style={styles.coordinatesContainer}>
-              <Text style={styles.coordinatesLabel}>Coordinates:</Text>
-              <Text style={styles.coordinatesText}>
-                Lat: {location.coordinates[1].toFixed(6)}
-              </Text>
-              <Text style={styles.coordinatesText}>
-                Lng: {location.coordinates[0].toFixed(6)}
+      {/* Restaurant Information */}
+      <SectionHeader title="Restaurant Details" emoji="🏪" />
+
+      <Card>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Name</Text>
+          <Text style={styles.infoValue}>{profile.restaurantName}</Text>
+        </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Owner</Text>
+          <Text style={styles.infoValue}>{profile.ownerName}</Text>
+        </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Address</Text>
+          <Text style={styles.infoValueSmall}>{profile.addressText}</Text>
+        </View>
+
+        {profile.location && (
+          <>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Coordinates</Text>
+              <Text style={styles.coordsText}>
+                {profile.location.coordinates[1].toFixed(5)},{' '}
+                {profile.location.coordinates[0].toFixed(5)}
               </Text>
             </View>
-          )}
-        </View>
+          </>
+        )}
+      </Card>
 
+      {/* Update Button */}
+      <PrimaryButton
+        title="✏️ Update Profile"
+        onPress={handleEditProfile}
+        style={styles.updateButton}
+      />
+
+      {/* Latest Active Request */}
+      <SectionHeader title="Latest Active Request" emoji="📦" />
+
+      {latestActiveRequest ? (
         <TouchableOpacity
-          style={[styles.saveButton, loading && styles.buttonDisabled]}
-          onPress={handleSave}
-          disabled={loading}
+          onPress={() =>
+            router.push({
+              pathname: `/restaurant/requests/[id]` as const,
+              params: {
+                id: latestActiveRequest._id,
+                data: JSON.stringify(latestActiveRequest),
+              },
+            })
+          }
         >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.saveButtonText}>
-              {profile ? 'Update Profile' : 'Create Profile'}
-            </Text>
-          )}
+          <Card>
+            <View style={styles.requestHeader}>
+              <View
+                style={[
+                  styles.statusBadge,
+                  {
+                    backgroundColor:
+                      STATUS_STYLES[latestActiveRequest.status].bg,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusBadgeText,
+                    {
+                      color: STATUS_STYLES[latestActiveRequest.status].text,
+                    },
+                  ]}
+                >
+                  {STATUS_STYLES[latestActiveRequest.status].label}
+                </Text>
+              </View>
+              <Text style={styles.feeText}>
+                {Math.round(latestActiveRequest.deliveryFee)} MAD
+              </Text>
+            </View>
+
+            <View style={styles.requestLocations}>
+              <View style={styles.locationRow}>
+                <Text style={styles.locationIcon}>🏪</Text>
+                <Text style={styles.locationText} numberOfLines={1}>
+                  {latestActiveRequest.pickupAddressText}
+                </Text>
+              </View>
+              <View style={styles.locationRow}>
+                <Text style={styles.locationIcon}>📍</Text>
+                <Text style={styles.locationText} numberOfLines={1}>
+                  {latestActiveRequest.dropoffAddressText}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.viewDetailsRow}>
+              <Text style={styles.viewDetailsText}>View Details →</Text>
+            </View>
+          </Card>
         </TouchableOpacity>
+      ) : (
+        <EmptyState
+          icon="📭"
+          title="No active requests"
+          description="All deliveries completed or no requests created yet"
+        />
+      )}
+
+      {/* Logout */}
+      <View style={styles.footer}>
+        <SecondaryButton
+          title="Logout"
+          onPress={handleLogout}
+          loading={authLoading}
+          danger
+        />
       </View>
-    </ScrollView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
   header: {
-    backgroundColor: '#34C759',
-    paddingTop: 60,
-    paddingBottom: 24,
-    paddingHorizontal: 24,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+    alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+  logo: {
+    fontSize: 64,
+    marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: typography.size.lg,
+    color: colors.text,
+    fontWeight: typography.weight.semibold,
   },
-  errorContainer: {
-    backgroundColor: '#ffebee',
-    padding: 12,
-    margin: 16,
-    borderRadius: 8,
+  verificationCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    marginBottom: spacing.lg,
   },
-  errorText: {
-    color: '#c62828',
+  verificationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  verificationIcon: {
+    fontSize: 32,
+    marginRight: spacing.md,
+  },
+  verificationBadge: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+  },
+  verificationBadgeText: {
+    color: '#fff',
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.bold,
+    letterSpacing: 1,
+  },
+  verificationTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
     textAlign: 'center',
   },
-  formContainer: {
-    padding: 24,
+  verificationSubtitle: {
+    fontSize: typography.size.sm,
+    color: colors.muted,
+    marginTop: spacing.xs,
+    textAlign: 'center',
   },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: '#333',
-  },
-  addressInput: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-  locationButton: {
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#007AFF',
-    borderRadius: 12,
-    padding: 16,
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: spacing.sm,
   },
-  locationButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
+  infoLabel: {
+    fontSize: typography.size.md,
+    color: colors.muted,
+    fontWeight: typography.weight.medium,
   },
-  coordinatesContainer: {
-    backgroundColor: '#e8f5e9',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 12,
+  infoValue: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.semibold,
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: spacing.lg,
   },
-  coordinatesLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2e7d32',
-    marginBottom: 4,
+  infoValueSmall: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: spacing.lg,
   },
-  coordinatesText: {
-    fontSize: 14,
-    color: '#333',
+  coordsText: {
+    fontSize: typography.size.sm,
+    color: colors.muted,
     fontFamily: 'monospace',
   },
-  saveButton: {
-    backgroundColor: '#34C759',
-    padding: 16,
-    borderRadius: 12,
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  updateButton: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  requestHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginBottom: spacing.md,
   },
-  buttonDisabled: {
-    backgroundColor: '#999',
+  statusBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
   },
-  saveButtonText: {
-    color: '#fff',
+  statusBadgeText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  feeText: {
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+  },
+  requestLocations: {
+    gap: spacing.sm,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationIcon: {
     fontSize: 16,
-    fontWeight: '600',
+    marginRight: spacing.sm,
+  },
+  locationText: {
+    flex: 1,
+    fontSize: typography.size.md,
+    color: colors.muted,
+  },
+  viewDetailsRow: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    alignItems: 'flex-end',
+  },
+  viewDetailsText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
+  footer: {
+    marginTop: spacing.xxl,
+    marginBottom: spacing.xl,
   },
 });

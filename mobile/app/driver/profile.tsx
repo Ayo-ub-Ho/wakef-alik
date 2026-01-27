@@ -1,26 +1,55 @@
+/**
+ * Driver Profile Screen - Stitch Style
+ * Shows driver profile with settings and logout
+ */
 import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   Switch,
+  Alert,
+  TouchableOpacity,
   ActivityIndicator,
-  ScrollView,
 } from 'react-native';
 import { useRouter, Href } from 'expo-router';
+import { useAuthStore } from '../../src/stores/auth.store';
 import { useDriverStore } from '../../src/stores/driver.store';
 import { VehicleType } from '../../src/types/models';
+import { AppScreen } from '../../src/components/ui/AppScreen';
+import { Card } from '../../src/components/ui/Card';
+import { SectionHeader } from '../../src/components/ui/SectionHeader';
+import { PrimaryButton } from '../../src/components/ui/PrimaryButton';
+import { SecondaryButton } from '../../src/components/ui/SecondaryButton';
+import { ErrorBanner } from '../../src/components/ErrorBanner';
+import { colors, typography, spacing, radius } from '../../src/theme/tokens';
+
+const VEHICLE_ICONS: Record<VehicleType, string> = {
+  BIKE: '🚲',
+  MOTORCYCLE: '🏍️',
+  CAR: '🚗',
+  VAN: '🚐',
+};
 
 const VEHICLE_TYPES: VehicleType[] = ['BIKE', 'MOTORCYCLE', 'CAR', 'VAN'];
 
 export default function DriverProfileScreen() {
   const router = useRouter();
-  const { profile, loading, error, saveProfile, fetchProfile, clearError } =
-    useDriverStore();
+  const { logout, loading: authLoading } = useAuthStore();
+  const {
+    profile,
+    loading,
+    error,
+    saveProfile,
+    fetchProfile,
+    toggleAvailability,
+    clearError,
+  } = useDriverStore();
 
   const [vehicleType, setVehicleType] = useState<VehicleType>('BIKE');
   const [hasDeliveryBox, setHasDeliveryBox] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [togglingAvailability, setTogglingAvailability] = useState(false);
 
   // Load existing profile data if available
   useEffect(() => {
@@ -43,194 +72,406 @@ export default function DriverProfileScreen() {
         vehicleType,
         hasDeliveryBox,
       });
-      router.replace('/driver' as Href);
+      setIsEditing(false);
     } catch (err) {
-      // Error is already set in store
       console.error('Save profile failed:', err);
     }
   };
 
+  const handleToggleAvailability = async () => {
+    setTogglingAvailability(true);
+    try {
+      await toggleAvailability(!profile?.isAvailable);
+    } finally {
+      setTogglingAvailability(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          router.replace('/(auth)/login' as Href);
+        },
+      },
+    ]);
+  };
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-    >
+    <AppScreen scroll tabBarPadding>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Driver Profile</Text>
-        <Text style={styles.subtitle}>
-          {profile ? 'Update your profile' : 'Complete your profile to start'}
-        </Text>
+        <Text style={styles.title}>Profile</Text>
+        <Text style={styles.subtitle}>Manage your driver settings</Text>
       </View>
 
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
+      {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
-      <View style={styles.formContainer}>
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Vehicle Type</Text>
-          <View style={styles.vehicleGrid}>
-            {VEHICLE_TYPES.map(type => (
-              <TouchableOpacity
-                key={type}
+      {/* Availability Card */}
+      <Card style={styles.availabilityCard} elevated>
+        <View style={styles.availabilityContent}>
+          <View style={styles.availabilityInfo}>
+            <Text style={styles.availabilityLabel}>AVAILABILITY</Text>
+            <Text style={styles.availabilityStatus}>
+              {profile?.isAvailable ? 'Online' : 'Offline'}
+            </Text>
+            <Text style={styles.availabilityHint}>
+              {profile?.isAvailable
+                ? 'You are receiving delivery offers'
+                : 'Go online to receive offers'}
+            </Text>
+          </View>
+          <View style={styles.toggleContainer}>
+            {togglingAvailability ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Switch
+                value={profile?.isAvailable ?? false}
+                onValueChange={handleToggleAvailability}
+                trackColor={{ false: colors.bgDark, true: colors.primary }}
+                thumbColor={colors.white}
+                ios_backgroundColor={colors.bgDark}
+              />
+            )}
+          </View>
+        </View>
+      </Card>
+
+      <SectionHeader
+        title="Driver Info"
+        actionText={isEditing ? 'Cancel' : 'Edit'}
+        onAction={() => setIsEditing(!isEditing)}
+      />
+
+      {/* Profile Info Card */}
+      <Card>
+        {/* Vehicle Type */}
+        <View style={styles.infoRow}>
+          <View style={styles.infoLabel}>
+            <Text style={styles.infoLabelText}>Vehicle Type</Text>
+          </View>
+          {isEditing ? (
+            <View style={styles.vehicleGrid}>
+              {VEHICLE_TYPES.map(type => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.vehicleButton,
+                    vehicleType === type && styles.vehicleButtonActive,
+                  ]}
+                  onPress={() => setVehicleType(type)}
+                  disabled={loading}
+                >
+                  <Text style={styles.vehicleIcon}>{VEHICLE_ICONS[type]}</Text>
+                  <Text
+                    style={[
+                      styles.vehicleButtonText,
+                      vehicleType === type && styles.vehicleButtonTextActive,
+                    ]}
+                  >
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.infoValue}>
+              <Text style={styles.vehicleDisplay}>
+                {VEHICLE_ICONS[profile?.vehicleType || 'BIKE']}{' '}
+                {profile?.vehicleType || 'Not set'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Delivery Box */}
+        <View style={styles.infoRow}>
+          <View style={styles.infoLabel}>
+            <Text style={styles.infoLabelText}>Delivery Box</Text>
+            <Text style={styles.infoHint}>
+              Do you have a food delivery box?
+            </Text>
+          </View>
+          {isEditing ? (
+            <Switch
+              value={hasDeliveryBox}
+              onValueChange={setHasDeliveryBox}
+              trackColor={{ false: colors.bgDark, true: colors.primary }}
+              thumbColor={colors.white}
+              disabled={loading}
+            />
+          ) : (
+            <View style={styles.badgeContainer}>
+              <View
                 style={[
-                  styles.vehicleButton,
-                  vehicleType === type && styles.vehicleButtonActive,
+                  styles.badge,
+                  {
+                    backgroundColor: profile?.hasDeliveryBox
+                      ? colors.successLight
+                      : colors.bgDark,
+                  },
                 ]}
-                onPress={() => setVehicleType(type)}
-                disabled={loading}
               >
                 <Text
                   style={[
-                    styles.vehicleButtonText,
-                    vehicleType === type && styles.vehicleButtonTextActive,
+                    styles.badgeText,
+                    {
+                      color: profile?.hasDeliveryBox
+                        ? colors.success
+                        : colors.muted,
+                    },
                   ]}
                 >
-                  {type}
+                  {profile?.hasDeliveryBox ? 'Yes' : 'No'}
                 </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.switchContainer}>
-          <View style={styles.switchLabel}>
-            <Text style={styles.label}>Delivery Box</Text>
-            <Text style={styles.switchDescription}>
-              Do you have a delivery box for food?
-            </Text>
-          </View>
-          <Switch
-            value={hasDeliveryBox}
-            onValueChange={setHasDeliveryBox}
-            disabled={loading}
-            trackColor={{ false: '#ddd', true: '#81b0ff' }}
-            thumbColor={hasDeliveryBox ? '#007AFF' : '#f4f3f4'}
-          />
-        </View>
-
-        <TouchableOpacity
-          style={[styles.saveButton, loading && styles.buttonDisabled]}
-          onPress={handleSave}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.saveButtonText}>
-              {profile ? 'Update Profile' : 'Create Profile'}
-            </Text>
+              </View>
+            </View>
           )}
+        </View>
+
+        {/* Verification Status */}
+        <View style={styles.infoRow}>
+          <View style={styles.infoLabel}>
+            <Text style={styles.infoLabelText}>Verification</Text>
+          </View>
+          <View style={styles.badgeContainer}>
+            <View
+              style={[
+                styles.badge,
+                {
+                  backgroundColor: profile?.isVerified
+                    ? colors.successLight
+                    : colors.warningLight,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.badgeText,
+                  {
+                    color: profile?.isVerified
+                      ? colors.success
+                      : colors.warning,
+                  },
+                ]}
+              >
+                {profile?.isVerified ? '✓ Verified' : '⏳ Pending'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Save Button */}
+        {isEditing && (
+          <View style={styles.saveRow}>
+            <PrimaryButton
+              title="Save Changes"
+              onPress={handleSave}
+              loading={loading}
+              disabled={loading}
+            />
+          </View>
+        )}
+      </Card>
+
+      <SectionHeader title="Account" />
+
+      {/* Account Actions */}
+      <Card>
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuIcon}>📄</Text>
+          <Text style={styles.menuText}>Terms of Service</Text>
+          <Text style={styles.menuArrow}>›</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuIcon}>🔒</Text>
+          <Text style={styles.menuText}>Privacy Policy</Text>
+          <Text style={styles.menuArrow}>›</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuIcon}>💬</Text>
+          <Text style={styles.menuText}>Support</Text>
+          <Text style={styles.menuArrow}>›</Text>
+        </TouchableOpacity>
+      </Card>
+
+      {/* Logout Button */}
+      <View style={styles.logoutSection}>
+        <SecondaryButton
+          title="Logout"
+          onPress={handleLogout}
+          loading={authLoading}
+          danger
+          style={styles.logoutButton}
+        />
       </View>
-    </ScrollView>
+
+      {/* Version */}
+      <Text style={styles.versionText}>Wakef Alik Driver v1.0.0</Text>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
   header: {
-    backgroundColor: '#007AFF',
-    paddingTop: 60,
-    paddingBottom: 24,
-    paddingHorizontal: 24,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+    fontSize: typography.size.title,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
   },
   subtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: typography.size.md,
+    color: colors.muted,
+    marginTop: spacing.xs,
   },
-  errorContainer: {
-    backgroundColor: '#ffebee',
-    padding: 12,
-    margin: 16,
-    borderRadius: 8,
+  availabilityCard: {
+    backgroundColor: colors.card,
+    marginBottom: spacing.lg,
   },
-  errorText: {
-    color: '#c62828',
-    textAlign: 'center',
+  availabilityContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  formContainer: {
-    padding: 24,
+  availabilityInfo: {
+    flex: 1,
   },
-  inputContainer: {
-    marginBottom: 24,
+  availabilityLabel: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+    color: colors.muted,
+    letterSpacing: 1,
+    marginBottom: spacing.xs,
   },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+  availabilityStatus: {
+    fontSize: typography.size.xxl,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  availabilityHint: {
+    fontSize: typography.size.sm,
+    color: colors.muted,
+  },
+  toggleContainer: {
+    marginLeft: spacing.lg,
+  },
+  infoRow: {
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  infoLabel: {
+    marginBottom: spacing.sm,
+  },
+  infoLabelText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  infoHint: {
+    fontSize: typography.size.sm,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  infoValue: {
+    marginTop: spacing.sm,
+  },
+  vehicleDisplay: {
+    fontSize: typography.size.lg,
+    color: colors.text,
   },
   vehicleGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
   vehicleButton: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.bgDark,
     borderWidth: 2,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    padding: 16,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
     alignItems: 'center',
   },
   vehicleButtonActive: {
-    borderColor: '#007AFF',
-    backgroundColor: '#e3f2fd',
+    borderColor: colors.primary,
+    backgroundColor: `${colors.primary}15`,
+  },
+  vehicleIcon: {
+    fontSize: 24,
+    marginBottom: spacing.xs,
   },
   vehicleButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.muted,
   },
   vehicleButtonTextActive: {
-    color: '#007AFF',
+    color: colors.text,
   },
-  switchContainer: {
+  badgeContainer: {
+    marginTop: spacing.sm,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+  },
+  badgeText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+  },
+  saveRow: {
+    marginTop: spacing.xl,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  menuItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 24,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  switchLabel: {
+  menuIcon: {
+    fontSize: 20,
+    marginRight: spacing.md,
+  },
+  menuText: {
     flex: 1,
+    fontSize: typography.size.md,
+    color: colors.text,
   },
-  switchDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+  menuArrow: {
+    fontSize: 20,
+    color: colors.muted,
   },
-  saveButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
+  logoutSection: {
+    marginTop: spacing.xl,
   },
-  buttonDisabled: {
-    backgroundColor: '#999',
+  logoutButton: {
+    width: '100%',
   },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  versionText: {
+    textAlign: 'center',
+    fontSize: typography.size.sm,
+    color: colors.muted,
+    marginTop: spacing.xl,
+    marginBottom: spacing.lg,
   },
 });

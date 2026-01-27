@@ -1,3 +1,7 @@
+/**
+ * New Request Screen - Stitch Style
+ * Form to create a new delivery request
+ */
 import React, { useState } from 'react';
 import {
   View,
@@ -15,7 +19,12 @@ import * as Location from 'expo-location';
 import { useRequestsStore } from '../../../src/stores/requests.store';
 import { useRestaurantStore } from '../../../src/stores/restaurant.store';
 import { GeoJSONPoint } from '../../../src/types/models';
+import { AppScreen } from '../../../src/components/ui/AppScreen';
+import { Card } from '../../../src/components/ui/Card';
+import { SectionHeader } from '../../../src/components/ui/SectionHeader';
+import { PrimaryButton } from '../../../src/components/ui/PrimaryButton';
 import { ErrorBanner } from '../../../src/components/ErrorBanner';
+import { colors, typography, spacing, radius } from '../../../src/theme/tokens';
 
 type LocationErrorType = 'PERMISSION_DENIED' | 'TIMEOUT' | 'UNKNOWN' | null;
 
@@ -173,289 +182,355 @@ export default function NewRequestScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+    <AppScreen noPadding>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>New Delivery Request</Text>
-        </View>
-
-        {(error || validationError) && (
-          <ErrorBanner
-            message={validationError || error || ''}
-            onDismiss={validationError ? clearValidationError : clearError}
-          />
-        )}
-
-        {locationError && (
-          <ErrorBanner
-            message={getLocationErrorMessage()}
-            onDismiss={() => setLocationError(null)}
-          />
-        )}
-
-        <View style={styles.formContainer}>
-          {/* Pickup Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📍 Pickup</Text>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Pickup Address</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter pickup address"
-                placeholderTextColor="#999"
-                value={pickupAddressText}
-                onChangeText={setPickupAddressText}
-                editable={!loading}
-              />
-            </View>
-
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
             <TouchableOpacity
-              style={[
-                styles.gpsButton,
-                locationLoading === 'pickup' && styles.buttonDisabled,
-                pickupLocation && styles.gpsButtonSuccess,
-              ]}
-              onPress={() => handleGetLocation('pickup')}
-              disabled={locationLoading !== null || loading}
+              style={styles.backButton}
+              onPress={() => router.back()}
             >
-              {locationLoading === 'pickup' ? (
-                <ActivityIndicator size="small" color="#34C759" />
-              ) : (
-                <Text
-                  style={[
-                    styles.gpsButtonText,
-                    pickupLocation && styles.gpsButtonTextSuccess,
-                  ]}
-                >
-                  {pickupLocation
-                    ? '✓ Location Set (Tap to Update)'
-                    : '📍 Use Current GPS'}
-                </Text>
-              )}
+              <Text style={styles.backButtonText}>← Back</Text>
             </TouchableOpacity>
-
-            {pickupLocation && (
-              <Text style={styles.coordsText}>
-                Lat: {pickupLocation.coordinates[1].toFixed(6)}, Lng:{' '}
-                {pickupLocation.coordinates[0].toFixed(6)}
-              </Text>
-            )}
+            <Text style={styles.title}>New Delivery Request</Text>
+            <Text style={styles.subtitle}>
+              Fill in pickup & dropoff details
+            </Text>
           </View>
 
-          {/* Dropoff Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🏠 Dropoff</Text>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Dropoff Address</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter dropoff address"
-                placeholderTextColor="#999"
-                value={dropoffAddressText}
-                onChangeText={setDropoffAddressText}
-                editable={!loading}
+          {/* Errors */}
+          <View style={styles.content}>
+            {(error || validationError) && (
+              <ErrorBanner
+                message={validationError || error || ''}
+                onDismiss={validationError ? clearValidationError : clearError}
               />
-            </View>
+            )}
 
-            <TouchableOpacity
-              style={[
-                styles.gpsButton,
-                locationLoading === 'dropoff' && styles.buttonDisabled,
-                dropoffLocation && styles.gpsButtonSuccess,
-              ]}
-              onPress={() => handleGetLocation('dropoff')}
-              disabled={locationLoading !== null || loading}
-            >
-              {locationLoading === 'dropoff' ? (
-                <ActivityIndicator size="small" color="#34C759" />
-              ) : (
-                <Text
-                  style={[
-                    styles.gpsButtonText,
-                    dropoffLocation && styles.gpsButtonTextSuccess,
-                  ]}
-                >
-                  {dropoffLocation
-                    ? '✓ Location Set (Tap to Update)'
-                    : '📍 Use Current GPS'}
-                </Text>
+            {locationError && (
+              <ErrorBanner
+                message={getLocationErrorMessage()}
+                onDismiss={() => setLocationError(null)}
+              />
+            )}
+
+            {/* Pickup Section */}
+            <SectionHeader title="Pickup Location" emoji="🏪" />
+            <Card style={styles.card}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Address</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter pickup address"
+                  placeholderTextColor={colors.muted}
+                  value={pickupAddressText}
+                  onChangeText={setPickupAddressText}
+                  editable={!loading}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.gpsButton,
+                  locationLoading === 'pickup' && styles.buttonDisabled,
+                  pickupLocation && styles.gpsButtonSuccess,
+                ]}
+                onPress={() => handleGetLocation('pickup')}
+                disabled={locationLoading !== null || loading}
+              >
+                {locationLoading === 'pickup' ? (
+                  <ActivityIndicator size="small" color={colors.success} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.gpsButtonText,
+                      pickupLocation && styles.gpsButtonTextSuccess,
+                    ]}
+                  >
+                    {pickupLocation
+                      ? '✓ Location Set (Tap to Update)'
+                      : '📍 Use Current GPS'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              {pickupLocation && (
+                <View style={styles.coordsBadge}>
+                  <Text style={styles.coordsText}>
+                    📍 {pickupLocation.coordinates[1].toFixed(5)},{' '}
+                    {pickupLocation.coordinates[0].toFixed(5)}
+                  </Text>
+                </View>
               )}
-            </TouchableOpacity>
+            </Card>
 
-            {dropoffLocation && (
-              <Text style={styles.coordsText}>
-                Lat: {dropoffLocation.coordinates[1].toFixed(6)}, Lng:{' '}
-                {dropoffLocation.coordinates[0].toFixed(6)}
-              </Text>
+            {/* Dropoff Section */}
+            <SectionHeader title="Dropoff Location" emoji="📍" />
+            <Card style={styles.card}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Address</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter dropoff address"
+                  placeholderTextColor={colors.muted}
+                  value={dropoffAddressText}
+                  onChangeText={setDropoffAddressText}
+                  editable={!loading}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.gpsButton,
+                  locationLoading === 'dropoff' && styles.buttonDisabled,
+                  dropoffLocation && styles.gpsButtonSuccess,
+                ]}
+                onPress={() => handleGetLocation('dropoff')}
+                disabled={locationLoading !== null || loading}
+              >
+                {locationLoading === 'dropoff' ? (
+                  <ActivityIndicator size="small" color={colors.success} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.gpsButtonText,
+                      dropoffLocation && styles.gpsButtonTextSuccess,
+                    ]}
+                  >
+                    {dropoffLocation
+                      ? '✓ Location Set (Tap to Update)'
+                      : '📍 Use Current GPS'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              {dropoffLocation && (
+                <View style={styles.coordsBadge}>
+                  <Text style={styles.coordsText}>
+                    📍 {dropoffLocation.coordinates[1].toFixed(5)},{' '}
+                    {dropoffLocation.coordinates[0].toFixed(5)}
+                  </Text>
+                </View>
+              )}
+            </Card>
+
+            {/* Fee & Notes */}
+            <SectionHeader title="Delivery Details" emoji="💰" />
+            <Card style={styles.card}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Delivery Fee (MAD)</Text>
+                <TextInput
+                  style={[styles.input, styles.feeInput]}
+                  placeholder="0"
+                  placeholderTextColor={colors.muted}
+                  value={deliveryFee}
+                  onChangeText={setDeliveryFee}
+                  keyboardType="decimal-pad"
+                  editable={!loading}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Notes (optional)</Text>
+                <TextInput
+                  style={[styles.input, styles.notesInput]}
+                  placeholder="Special instructions for the driver..."
+                  placeholderTextColor={colors.muted}
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                  numberOfLines={3}
+                  editable={!loading}
+                />
+              </View>
+            </Card>
+
+            {/* Summary Card (only show when both locations set) */}
+            {pickupLocation && dropoffLocation && (
+              <Card style={[styles.card, styles.summaryCard]}>
+                <Text style={styles.summaryTitle}>Summary</Text>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>From:</Text>
+                  <Text style={styles.summaryValue} numberOfLines={1}>
+                    {pickupAddressText || 'Not set'}
+                  </Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>To:</Text>
+                  <Text style={styles.summaryValue} numberOfLines={1}>
+                    {dropoffAddressText || 'Not set'}
+                  </Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Fee:</Text>
+                  <Text style={styles.summaryFee}>
+                    {deliveryFee ? `${deliveryFee} MAD` : 'Not set'}
+                  </Text>
+                </View>
+              </Card>
             )}
+
+            {/* Submit Button */}
+            <PrimaryButton
+              title={loading ? 'Creating...' : 'Create Request'}
+              onPress={handleSubmit}
+              loading={loading}
+              disabled={loading}
+              style={styles.submitButton}
+            />
           </View>
-
-          {/* Fee & Notes */}
-          <View style={styles.section}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Delivery Fee ($)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                placeholderTextColor="#999"
-                value={deliveryFee}
-                onChangeText={setDeliveryFee}
-                keyboardType="decimal-pad"
-                editable={!loading}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Notes (optional)</Text>
-              <TextInput
-                style={[styles.input, styles.notesInput]}
-                placeholder="Special instructions..."
-                placeholderTextColor="#999"
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={3}
-                editable={!loading}
-              />
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.submitButton, loading && styles.buttonDisabled]}
-            onPress={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.submitButtonText}>Create Request</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
+    paddingBottom: spacing.xxxl,
   },
   header: {
-    backgroundColor: '#34C759',
-    paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
   backButton: {
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   backButtonText: {
-    color: '#fff',
-    fontSize: 16,
+    fontSize: typography.size.md,
+    color: colors.muted,
+    fontWeight: typography.weight.medium,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: typography.size.title,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
   },
-  formContainer: {
-    padding: 16,
+  subtitle: {
+    fontSize: typography.size.md,
+    color: colors.muted,
+    marginTop: spacing.xs,
   },
-  section: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+  content: {
+    paddingHorizontal: spacing.lg,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 16,
+  card: {
+    marginBottom: spacing.lg,
   },
   inputContainer: {
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginBottom: spacing.sm,
   },
   input: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.bg,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    color: '#333',
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    fontSize: typography.size.md,
+    color: colors.text,
+  },
+  feeInput: {
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.bold,
+    textAlign: 'center',
   },
   notesInput: {
-    height: 80,
+    height: 100,
     textAlignVertical: 'top',
   },
   gpsButton: {
     borderWidth: 2,
-    borderColor: '#34C759',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: colors.primary,
+    borderRadius: radius.full,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
     alignItems: 'center',
-    marginBottom: 8,
   },
   gpsButtonSuccess: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#2e7d32',
+    backgroundColor: colors.successLight,
+    borderColor: colors.success,
   },
   gpsButtonText: {
-    color: '#34C759',
-    fontWeight: '600',
+    color: colors.text,
+    fontWeight: typography.weight.semibold,
+    fontSize: typography.size.md,
   },
   gpsButtonTextSuccess: {
-    color: '#2e7d32',
-  },
-  coordsText: {
-    fontSize: 12,
-    color: '#666',
-    fontFamily: 'monospace',
-    textAlign: 'center',
-  },
-  submitButton: {
-    backgroundColor: '#34C759',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
+    color: colors.success,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  coordsBadge: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bg,
+    borderRadius: radius.full,
+    alignSelf: 'center',
+  },
+  coordsText: {
+    fontSize: typography.size.xs,
+    color: colors.muted,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  summaryCard: {
+    backgroundColor: colors.primary + '20',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  summaryTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginBottom: spacing.md,
+    textAlign: 'center',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  summaryLabel: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.muted,
+    width: 50,
+  },
+  summaryValue: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    flex: 1,
+  },
+  summaryFee: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+  },
+  submitButton: {
+    marginTop: spacing.md,
   },
 });

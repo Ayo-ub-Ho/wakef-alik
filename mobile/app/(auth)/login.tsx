@@ -1,18 +1,33 @@
+/**
+ * Login Screen - Stitch Style
+ */
 import React, { useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
-  Alert,
-  ActivityIndicator,
+  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useRouter, Link, Href } from 'expo-router';
 import { useAuthStore } from '../../src/stores/auth.store';
+import { AppScreen } from '../../src/components/ui/AppScreen';
+import { Card } from '../../src/components/ui/Card';
+import { TextField } from '../../src/components/ui/TextField';
+import { PasswordField } from '../../src/components/ui/PasswordField';
+import { PrimaryButton } from '../../src/components/ui/PrimaryButton';
+import { ErrorBanner } from '../../src/components/ErrorBanner';
+import { LoadingView } from '../../src/components/LoadingView';
+import {
+  colors,
+  typography,
+  spacing,
+  radius,
+  shadows,
+} from '../../src/theme/tokens';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -45,159 +60,155 @@ export default function LoginScreen() {
     }
   };
 
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.formContainer}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to your account</Text>
+  // Show full-screen loading only on submission
+  if (loading) {
+    return (
+      <AppScreen noPadding>
+        <View style={styles.loadingContainer}>
+          <LoadingView text="Signing in..." />
+        </View>
+      </AppScreen>
+    );
+  }
 
+  return (
+    <AppScreen noPadding>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header Section */}
+          <View style={styles.headerSection}>
+            <View style={styles.logoContainer}>
+              <Text style={styles.logoEmoji}>👋</Text>
+            </View>
+            <Text style={styles.title}>Welcome Back</Text>
+            <Text style={styles.subtitle}>Sign in to your account</Text>
+          </View>
+
+          {/* Error Banner */}
           {error && (
             <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
+              <ErrorBanner message={error} onDismiss={clearError} />
             </View>
           )}
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
-              placeholderTextColor="#999"
+          {/* Login Form */}
+          <Card style={styles.formCard}>
+            <TextField
+              label="Email"
               value={email}
               onChangeText={setEmail}
+              placeholder="Enter your email"
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              editable={!loading}
             />
-          </View>
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your password"
-              placeholderTextColor="#999"
+            <PasswordField
+              label="Password"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
-              editable={!loading}
+              placeholder="Enter your password"
             />
-          </View>
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Sign In</Text>
-            )}
-          </TouchableOpacity>
+            <PrimaryButton
+              title="Sign In"
+              onPress={handleLogin}
+              loading={loading}
+              style={styles.submitButton}
+            />
+          </Card>
 
-          <View style={styles.linkContainer}>
-            <Text style={styles.linkText}>Don&apos;t have an account? </Text>
+          {/* Register Link */}
+          <View style={styles.linkSection}>
+            <Text style={styles.linkText}>Do not have an account?</Text>
             <Link href="/(auth)/register" asChild>
-              <TouchableOpacity>
-                <Text style={styles.link}>Register</Text>
+              <TouchableOpacity style={styles.linkButton}>
+                <Text style={styles.linkButtonText}>Create Account</Text>
               </TouchableOpacity>
             </Link>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  keyboardView: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xxxl + spacing.xl,
+    paddingBottom: spacing.xxxl,
   },
-  formContainer: {
-    padding: 24,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerSection: {
+    alignItems: 'center',
+    marginBottom: spacing.xxl,
+  },
+  logoContainer: {
+    width: 80,
+    height: 80,
+    backgroundColor: colors.primary,
+    borderRadius: radius.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+    ...shadows.cardElevated,
+  },
+  logoEmoji: {
+    fontSize: 40,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 8,
+    fontSize: typography.size.xxxl,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 32,
+    fontSize: typography.size.lg,
+    color: colors.muted,
   },
   errorContainer: {
-    backgroundColor: '#ffebee',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+    marginBottom: spacing.md,
+    marginHorizontal: -spacing.lg,
   },
-  errorText: {
-    color: '#c62828',
-    textAlign: 'center',
+  formCard: {
+    marginBottom: spacing.xl,
   },
-  inputContainer: {
-    marginBottom: 16,
+  submitButton: {
+    marginTop: spacing.md,
   },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 16,
-    color: '#333',
-  },
-  button: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 8,
+  linkSection: {
     alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    backgroundColor: '#999',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  linkContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 24,
   },
   linkText: {
-    color: '#666',
-    fontSize: 14,
+    fontSize: typography.size.md,
+    color: colors.muted,
+    marginBottom: spacing.md,
   },
-  link: {
-    color: '#007AFF',
-    fontSize: 14,
-    fontWeight: '600',
+  linkButton: {
+    backgroundColor: colors.bgDark,
+    paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.full,
+  },
+  linkButtonText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
   },
 });

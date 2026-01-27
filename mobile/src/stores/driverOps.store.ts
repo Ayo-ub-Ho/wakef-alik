@@ -49,6 +49,8 @@ interface DriverOpsActions {
   acceptOfferAndSync: (offerId: string) => Promise<RequestOffer | null>;
   /** Reject offer and refresh inbox */
   rejectOfferAndSync: (offerId: string) => Promise<void>;
+  /** Remove an offer from local inbox (used when offer is no longer available) */
+  removeOfferFromInbox: (offerId: string) => void;
   updateStatus: (requestId: string, status: DeliveryStatus) => Promise<void>;
   clearError: () => void;
   clearLocationError: () => void;
@@ -367,5 +369,14 @@ export const useDriverOpsStore = create<DriverOpsStore>((set, get) => ({
    */
   clearLocationError: () => {
     set({ locationError: null });
+  },
+
+  /**
+   * Remove an offer from the local inbox
+   * Used when an offer is no longer available (409 error)
+   */
+  removeOfferFromInbox: (offerId: string) => {
+    const currentInbox = get().inbox;
+    set({ inbox: currentInbox.filter((o) => o._id !== offerId) });
   },
 }));

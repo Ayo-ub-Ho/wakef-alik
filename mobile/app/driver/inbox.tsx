@@ -1,31 +1,47 @@
+/**
+ * Inbox Screen - Stitch Style
+ * Shows pending delivery offers for the driver
+ */
 import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   FlatList,
-  ActivityIndicator,
   RefreshControl,
   Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useDriverOpsStore } from '../../src/stores/driverOps.store';
+import { useDriverStore } from '../../src/stores/driver.store';
 import { RequestOffer, OfferState } from '../../src/types/models';
+import { AppScreen } from '../../src/components/ui/AppScreen';
+import { Card } from '../../src/components/ui/Card';
+import { SectionHeader } from '../../src/components/ui/SectionHeader';
+import { PrimaryButton } from '../../src/components/ui/PrimaryButton';
+import { RequestCard } from '../../src/components/ui/RequestCard';
 import { LoadingView } from '../../src/components/LoadingView';
 import { ErrorBanner } from '../../src/components/ErrorBanner';
-import { EmptyState } from '../../src/components/EmptyState';
+import { colors, typography, spacing, radius } from '../../src/theme/tokens';
 import { AxiosError } from 'axios';
 
-const OFFER_STATE_COLORS: Record<OfferState, string> = {
-  SENT: '#1976D2',
-  ACCEPTED: '#388E3C',
-  REJECTED: '#D32F2F',
-  EXPIRED: '#9E9E9E',
+const OFFER_STATE_STYLES: Record<
+  OfferState,
+  { bg: string; text: string; label: string }
+> = {
+  SENT: { bg: colors.infoLight, text: colors.info, label: 'Pending' },
+  ACCEPTED: {
+    bg: colors.successLight,
+    text: colors.success,
+    label: 'Accepted',
+  },
+  REJECTED: { bg: colors.dangerLight, text: colors.danger, label: 'Rejected' },
+  EXPIRED: { bg: colors.bgDark, text: colors.muted, label: 'Expired' },
 };
 
 export default function InboxScreen() {
   const router = useRouter();
+  const { profile, toggleAvailability } = useDriverStore();
   const {
     inbox,
     loading,
@@ -34,11 +50,14 @@ export default function InboxScreen() {
     loadInbox,
     acceptOfferAndSync,
     rejectOfferAndSync,
+    removeOfferFromInbox,
+    refreshLocationAndSync,
     clearError,
   } = useDriverOpsStore();
 
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [togglingAvailability, setTogglingAvailability] = useState(false);
 
   // Refresh on screen focus
   useFocusEffect(
@@ -53,13 +72,27 @@ export default function InboxScreen() {
     setRefreshing(false);
   };
 
+  const handleGoOnline = async () => {
+    if (!profile) return;
+    setTogglingAvailability(true);
+    try {
+      await toggleAvailability(true);
+    } finally {
+      setTogglingAvailability(false);
+    }
+  };
+
+  const handleUpdateGPS = async () => {
+    await refreshLocationAndSync();
+    await loadInbox();
+  };
+
   /**
    * Get user-friendly error message from API error
    */
   const getErrorMessage = (err: unknown): string => {
     const axiosError = err as AxiosError<{ message?: string; error?: string }>;
 
-    // Handle specific HTTP status codes
     if (axiosError.response?.status === 409) {
       return 'This offer is no longer available. It may have been accepted by another driver or expired.';
     }
@@ -70,7 +103,6 @@ export default function InboxScreen() {
       return 'You are not authorized to accept this offer.';
     }
 
-    // Extract message from response
     if (axiosError.response?.data?.message) {
       return axiosError.response.data.message;
     }
@@ -100,7 +132,6 @@ export default function InboxScreen() {
                   {
                     text: 'OK',
                     onPress: () => {
-                      // Navigate to deliveries, passing request data if available
                       if (acceptedOffer?.request) {
                         router.push({
                           pathname: `/driver/request/[id]` as const,
@@ -117,17 +148,9 @@ export default function InboxScreen() {
                 ],
               );
             } catch (err) {
-              // 409 = offer no longer available (expected race condition)
+              removeOfferFromInbox(offer._id);
               const message = getErrorMessage(err);
-              Alert.alert('Cannot Accept Offer', message, [
-                {
-                  text: 'OK',
-                  onPress: () => {
-                    // Refresh inbox to get updated offers
-                    loadInbox();
-                  },
-                },
-              ]);
+              Alert.alert('Cannot Accept Offer', message);
             } finally {
               setProcessingId(null);
             }
@@ -148,14 +171,9 @@ export default function InboxScreen() {
           try {
             await rejectOfferAndSync(offer._id);
           } catch (err) {
-            console.error('Reject failed:', err);
+            removeOfferFromInbox(offer._id);
             const message = getErrorMessage(err);
-            Alert.alert('Cannot Reject Offer', message, [
-              {
-                text: 'OK',
-                onPress: () => loadInbox(),
-              },
-            ]);
+            Alert.alert('Cannot Reject Offer', message);
           } finally {
             setProcessingId(null);
           }
@@ -164,140 +182,120 @@ export default function InboxScreen() {
     ]);
   };
 
-  const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleString();
+  const formatLastSync = () => {
+    if (!lastSyncedAt) return null;
+    const date = new Date(lastSyncedAt);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const renderOffer = ({ item }: { item: RequestOffer }) => {
-    const isProcessing = processingId === item._id;
     const request = item.request;
+    const fee = request?.deliveryFee || 0;
+    // Estimate distance and ETA
+    const estimatedKm = (fee / 14).toFixed(1);
+    const estimatedMins = Math.max(5, Math.round(parseFloat(estimatedKm) * 6));
+
+    const stateStyle = OFFER_STATE_STYLES[item.state];
 
     return (
-      <View style={styles.offerCard}>
-        <View style={styles.offerHeader}>
-          <Text style={styles.restaurantName}>
-            {request?.restaurant?.restaurantName || 'Unknown Restaurant'}
+      <View style={styles.offerWrapper}>
+        {/* State Badge */}
+        <View style={[styles.stateBadge, { backgroundColor: stateStyle.bg }]}>
+          <Text style={[styles.stateBadgeText, { color: stateStyle.text }]}>
+            {stateStyle.label}
           </Text>
-          <View style={styles.headerBadges}>
-            <View
-              style={[
-                styles.stateBadge,
-                { backgroundColor: OFFER_STATE_COLORS[item.state] },
-              ]}
-            >
-              <Text style={styles.stateBadgeText}>{item.state}</Text>
-            </View>
-          </View>
         </View>
 
-        <View style={styles.offerDetails}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>📍 Pickup</Text>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {request?.pickupAddressText || 'N/A'}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>🏠 Dropoff</Text>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {request?.dropoffAddressText || 'N/A'}
-            </Text>
-          </View>
-          <View style={styles.feeRow}>
-            <Text style={styles.detailLabel}>💰 Delivery Fee</Text>
-            <Text style={styles.feeValue}>
-              ${request?.deliveryFee?.toFixed(2) || '0.00'}
-            </Text>
-          </View>
-          {item.message && (
-            <View style={styles.messageRow}>
-              <Text style={styles.messageLabel}>Message:</Text>
-              <Text style={styles.messageText}>{item.message}</Text>
-            </View>
-          )}
-        </View>
-
-        <Text style={styles.sentTimeText}>Sent: {formatDate(item.sentAt)}</Text>
-
-        {item.state === 'SENT' && (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[
-                styles.rejectButton,
-                isProcessing && styles.buttonDisabled,
-              ]}
-              onPress={() => handleReject(item)}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <ActivityIndicator size="small" color="#D32F2F" />
-              ) : (
-                <Text style={styles.rejectButtonText}>✕ Reject</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.acceptButton,
-                isProcessing && styles.buttonDisabled,
-              ]}
-              onPress={() => handleAccept(item)}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.acceptButtonText}>✓ Accept</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
+        <RequestCard
+          restaurantName={request?.restaurant?.restaurantName || 'Restaurant'}
+          pickupAddress={request?.pickupAddressText || 'Pickup location'}
+          dropoffAddress={request?.dropoffAddressText || 'Dropoff location'}
+          fee={fee}
+          distance={estimatedKm}
+          etaMinutes={estimatedMins}
+          onAccept={
+            item.state === 'SENT' ? () => handleAccept(item) : undefined
+          }
+          onReject={
+            item.state === 'SENT' ? () => handleReject(item) : undefined
+          }
+          loading={processingId === item._id}
+          disabled={processingId !== null}
+        />
       </View>
     );
   };
 
-  const renderEmpty = () => (
-    <EmptyState
-      icon="📥"
-      title="No offers in your inbox"
-      description="Offers from restaurants will appear here. Make sure your availability is turned on and GPS is updated."
-    />
-  );
+  const renderEmpty = () => {
+    const isOnline = profile?.isAvailable;
 
-  const formatLastSync = () => {
-    if (!lastSyncedAt) return null;
-    const date = new Date(lastSyncedAt);
-    return `Last synced: ${date.toLocaleTimeString()}`;
+    return (
+      <View style={styles.emptyContainer}>
+        <Card style={styles.emptyCard}>
+          <Text style={styles.emptyIcon}>📥</Text>
+          <Text style={styles.emptyTitle}>No offers in your inbox</Text>
+          <Text style={styles.emptyText}>
+            {isOnline
+              ? 'Offers from restaurants will appear here. Make sure your GPS is updated.'
+              : 'Go online to start receiving delivery offers.'}
+          </Text>
+          {isOnline ? (
+            <PrimaryButton
+              title="Update GPS"
+              onPress={handleUpdateGPS}
+              style={styles.emptyButton}
+            />
+          ) : (
+            <PrimaryButton
+              title="Go Online"
+              onPress={handleGoOnline}
+              loading={togglingAvailability}
+              style={styles.emptyButton}
+            />
+          )}
+        </Card>
+      </View>
+    );
   };
 
+  // Count pending offers
+  const pendingCount = inbox.filter(o => o.state === 'SENT').length;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>📥 Offers Inbox</Text>
-        <View style={styles.subtitleRow}>
-          <Text style={styles.subtitle}>
-            {inbox.length} pending offer{inbox.length !== 1 ? 's' : ''}
-          </Text>
+    <AppScreen tabBarPadding noPadding>
+      {/* Header */}
+      <View style={styles.headerSection}>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Inbox</Text>
           {lastSyncedAt && (
-            <Text style={styles.syncTime}>{formatLastSync()}</Text>
+            <View style={styles.syncBadge}>
+              <Text style={styles.syncText}>🕐 {formatLastSync()}</Text>
+            </View>
           )}
         </View>
+        <Text style={styles.subtitle}>
+          {pendingCount > 0
+            ? `${pendingCount} pending offer${pendingCount !== 1 ? 's' : ''}`
+            : 'No pending offers'}
+        </Text>
       </View>
 
       {error && (
-        <ErrorBanner
-          message={error}
-          onRetry={loadInbox}
-          onDismiss={clearError}
-        />
+        <View style={styles.errorPadding}>
+          <ErrorBanner
+            message={error}
+            onRetry={loadInbox}
+            onDismiss={clearError}
+          />
+        </View>
       )}
+
+      <View style={styles.content}>
+        <SectionHeader
+          title="Offers"
+          badge={pendingCount > 0 ? `${pendingCount} New` : undefined}
+        />
+      </View>
 
       {loading && !refreshing && inbox.length === 0 ? (
         <LoadingView text="Loading inbox..." />
@@ -308,189 +306,106 @@ export default function InboxScreen() {
           renderItem={renderOffer}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              colors={['#007AFF']}
-              tintColor="#007AFF"
+              colors={[colors.primary]}
+              tintColor={colors.primary}
             />
           }
         />
       )}
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
+  headerSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  header: {
-    backgroundColor: '#007AFF',
-    paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 24,
-  },
-  backButton: {
-    marginBottom: 12,
-  },
-  backText: {
-    color: '#fff',
-    fontSize: 16,
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: typography.size.title,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
   },
   subtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 4,
+    fontSize: typography.size.md,
+    color: colors.muted,
+    marginTop: spacing.xs,
   },
-  subtitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
+  syncBadge: {
+    backgroundColor: colors.bgDark,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
   },
-  syncTime: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
+  syncText: {
+    fontSize: typography.size.sm,
+    color: colors.muted,
+    fontWeight: typography.weight.medium,
+  },
+  errorPadding: {
+    paddingHorizontal: spacing.lg,
+  },
+  content: {
+    paddingHorizontal: spacing.lg,
   },
   listContent: {
-    padding: 16,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxxl,
     flexGrow: 1,
   },
-  offerCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  offerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  headerBadges: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  offerWrapper: {
+    marginBottom: spacing.md,
   },
   stateBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+    marginBottom: spacing.sm,
   },
   stateBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  restaurantName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
+  emptyContainer: {
     flex: 1,
-    marginRight: 8,
+    paddingTop: spacing.xl,
   },
-  sentTimeText: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'right',
-  },
-  offerDetails: {
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingTop: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  feeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  detailValue: {
-    fontSize: 14,
-    color: '#333',
-    flex: 1,
-    textAlign: 'right',
-    marginLeft: 12,
-  },
-  feeValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2e7d32',
-  },
-  messageRow: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  messageLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  messageText: {
-    fontSize: 14,
-    color: '#333',
-    fontStyle: 'italic',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    marginTop: 16,
-    gap: 12,
-  },
-  rejectButton: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#D32F2F',
-    paddingVertical: 12,
-    borderRadius: 8,
+  emptyCard: {
     alignItems: 'center',
+    paddingVertical: spacing.xxxl,
   },
-  rejectButtonText: {
-    color: '#D32F2F',
-    fontWeight: '600',
-    fontSize: 16,
+  emptyIcon: {
+    fontSize: 56,
+    marginBottom: spacing.lg,
   },
-  acceptButton: {
-    flex: 1,
-    backgroundColor: '#388E3C',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
+  emptyTitle: {
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginBottom: spacing.sm,
   },
-  acceptButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
+  emptyText: {
+    fontSize: typography.size.md,
+    color: colors.muted,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.lg,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  emptyButton: {
+    marginTop: spacing.md,
   },
 });

@@ -1,26 +1,54 @@
-import React, { useCallback, useState } from 'react';
+/**
+ * Requests List Screen - Stitch Style with Active/History Tabs
+ * Shows all delivery requests for the restaurant with segmented control
+ */
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   FlatList,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter, Href, useFocusEffect } from 'expo-router';
 import { useRequestsStore } from '../../../src/stores/requests.store';
 import { DeliveryRequest, DeliveryStatus } from '../../../src/types/models';
+import { AppScreen } from '../../../src/components/ui/AppScreen';
+import { Card } from '../../../src/components/ui/Card';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { ErrorBanner } from '../../../src/components/ErrorBanner';
 import { EmptyState } from '../../../src/components/EmptyState';
+import { colors, typography, spacing, radius } from '../../../src/theme/tokens';
 
-const STATUS_COLORS: Record<DeliveryStatus, string> = {
-  PENDING: '#FFA000',
-  PROPOSED: '#1976D2',
-  ACCEPTED: '#7B1FA2',
-  IN_DELIVERY: '#0097A7',
-  DELIVERED: '#388E3C',
-  CANCELLED: '#D32F2F',
+type TabType = 'active' | 'history';
+
+const ACTIVE_STATUSES: DeliveryStatus[] = [
+  'PENDING',
+  'PROPOSED',
+  'ACCEPTED',
+  'IN_DELIVERY',
+];
+const HISTORY_STATUSES: DeliveryStatus[] = ['DELIVERED', 'CANCELLED'];
+
+const STATUS_STYLES: Record<
+  DeliveryStatus,
+  { bg: string; text: string; label: string }
+> = {
+  PENDING: { bg: colors.warningLight, text: colors.warning, label: 'Pending' },
+  PROPOSED: { bg: colors.infoLight, text: colors.info, label: 'Proposed' },
+  ACCEPTED: { bg: '#F3E5F5', text: '#7B1FA2', label: 'Accepted' },
+  IN_DELIVERY: { bg: '#E0F7FA', text: '#0097A7', label: 'In Delivery' },
+  DELIVERED: {
+    bg: colors.successLight,
+    text: colors.success,
+    label: 'Delivered',
+  },
+  CANCELLED: {
+    bg: colors.dangerLight,
+    text: colors.danger,
+    label: 'Cancelled',
+  },
 };
 
 export default function RequestsListScreen() {
@@ -28,6 +56,29 @@ export default function RequestsListScreen() {
   const { requests, loading, error, fetchMyRequests, clearError } =
     useRequestsStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('active');
+
+  // Filter requests based on active tab
+  const filteredRequests = useMemo(() => {
+    const statuses =
+      activeTab === 'active' ? ACTIVE_STATUSES : HISTORY_STATUSES;
+    return requests
+      .filter(r => statuses.includes(r.status))
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+  }, [requests, activeTab]);
+
+  // Count for tabs
+  const activeCount = useMemo(
+    () => requests.filter(r => ACTIVE_STATUSES.includes(r.status)).length,
+    [requests],
+  );
+  const historyCount = useMemo(
+    () => requests.filter(r => HISTORY_STATUSES.includes(r.status)).length,
+    [requests],
+  );
 
   // Refresh on screen focus
   useFocusEffect(
@@ -63,245 +114,357 @@ export default function RequestsListScreen() {
     );
   };
 
-  const renderRequest = ({ item }: { item: DeliveryRequest }) => (
-    <TouchableOpacity
-      style={styles.requestCard}
-      onPress={() => handleRequestPress(item)}
-    >
-      <View style={styles.requestHeader}>
-        <View style={styles.badgeRow}>
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: STATUS_COLORS[item.status] },
-            ]}
-          >
-            <Text style={styles.statusText}>{item.status}</Text>
-          </View>
-          {isDriverAssigned(item) && (
-            <View style={styles.assignedBadge}>
-              <Text style={styles.assignedText}>✅ Assigned</Text>
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const renderRequest = ({ item }: { item: DeliveryRequest }) => {
+    const statusStyle = STATUS_STYLES[item.status];
+    const driverAssigned = isDriverAssigned(item);
+
+    return (
+      <TouchableOpacity onPress={() => handleRequestPress(item)}>
+        <Card style={styles.requestCard}>
+          {/* Header Row */}
+          <View style={styles.cardHeader}>
+            <View style={styles.badges}>
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: statusStyle.bg },
+                ]}
+              >
+                <Text
+                  style={[styles.statusBadgeText, { color: statusStyle.text }]}
+                >
+                  {statusStyle.label}
+                </Text>
+              </View>
+              {driverAssigned && (
+                <View style={styles.assignedBadge}>
+                  <Text style={styles.assignedBadgeText}>✅ Assigned</Text>
+                </View>
+              )}
             </View>
-          )}
-        </View>
-        <Text style={styles.feeText}>${item.deliveryFee.toFixed(2)}</Text>
-      </View>
+            <Text style={styles.feeText}>
+              {Math.round(item.deliveryFee)} MAD
+            </Text>
+          </View>
 
-      <View style={styles.addressContainer}>
-        <View style={styles.addressRow}>
-          <Text style={styles.addressIcon}>📍</Text>
-          <Text style={styles.addressText} numberOfLines={1}>
-            {item.pickupAddressText}
-          </Text>
-        </View>
-        <View style={styles.addressArrow}>
-          <Text style={styles.arrowText}>↓</Text>
-        </View>
-        <View style={styles.addressRow}>
-          <Text style={styles.addressIcon}>🏠</Text>
-          <Text style={styles.addressText} numberOfLines={1}>
-            {item.dropoffAddressText}
-          </Text>
-        </View>
-      </View>
+          {/* Locations */}
+          <View style={styles.locationsSection}>
+            <View style={styles.locationRow}>
+              <Text style={styles.locationIcon}>🏪</Text>
+              <View style={styles.locationTextContainer}>
+                <Text style={styles.locationLabel}>PICKUP</Text>
+                <Text style={styles.locationAddress} numberOfLines={1}>
+                  {item.pickupAddressText}
+                </Text>
+              </View>
+            </View>
 
-      <Text style={styles.dateText}>
-        {new Date(item.createdAt).toLocaleDateString()}
-      </Text>
-    </TouchableOpacity>
-  );
+            <View style={styles.locationRow}>
+              <Text style={styles.locationIcon}>📍</Text>
+              <View style={styles.locationTextContainer}>
+                <Text style={styles.locationLabel}>DROP-OFF</Text>
+                <Text style={styles.locationAddress} numberOfLines={1}>
+                  {item.dropoffAddressText}
+                </Text>
+              </View>
+            </View>
+          </View>
 
-  const renderEmpty = () => (
-    <EmptyState
-      icon="📦"
-      title="No delivery requests yet"
-      description="Create your first request to get started"
-      actionLabel="Create Request"
-      onAction={handleNewRequest}
-    />
-  );
+          {/* Footer */}
+          <View style={styles.cardFooter}>
+            <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
+          </View>
+        </Card>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderEmpty = () => {
+    if (activeTab === 'active') {
+      return (
+        <EmptyState
+          icon="📦"
+          title="No active requests"
+          description="Create a new delivery request to get started"
+          actionLabel="Create Request"
+          onAction={handleNewRequest}
+        />
+      );
+    }
+    return (
+      <EmptyState
+        icon="📋"
+        title="No request history"
+        description="Your completed and cancelled requests will appear here"
+        actionLabel="View Active"
+        onAction={() => setActiveTab('active')}
+      />
+    );
+  };
 
   // Show loading only on initial load
   if (loading && requests.length === 0 && !refreshing) {
     return (
-      <View style={styles.container}>
+      <AppScreen noPadding>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <Text style={styles.title}>Delivery Requests</Text>
+            <TouchableOpacity
+              style={styles.newButton}
+              onPress={handleNewRequest}
+            >
+              <Text style={styles.newButtonText}>+ New</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <LoadingView text="Loading requests..." />
+      </AppScreen>
+    );
+  }
+
+  return (
+    <AppScreen noPadding>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
           <Text style={styles.title}>Delivery Requests</Text>
           <TouchableOpacity style={styles.newButton} onPress={handleNewRequest}>
             <Text style={styles.newButtonText}>+ New</Text>
           </TouchableOpacity>
         </View>
-        <LoadingView text="Loading requests..." />
+        <Text style={styles.subtitle}>
+          {requests.length} total request{requests.length !== 1 ? 's' : ''}
+        </Text>
       </View>
-    );
-  }
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backButtonText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Delivery Requests</Text>
-        <TouchableOpacity style={styles.newButton} onPress={handleNewRequest}>
-          <Text style={styles.newButtonText}>+ New</Text>
-        </TouchableOpacity>
+      {/* Segmented Control */}
+      <View style={styles.segmentedContainer}>
+        <View style={styles.segmentedControl}>
+          <TouchableOpacity
+            style={[
+              styles.segmentButton,
+              activeTab === 'active' && styles.segmentButtonActive,
+            ]}
+            onPress={() => setActiveTab('active')}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                activeTab === 'active' && styles.segmentTextActive,
+              ]}
+            >
+              Active ({activeCount})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.segmentButton,
+              activeTab === 'history' && styles.segmentButtonActive,
+            ]}
+            onPress={() => setActiveTab('history')}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                activeTab === 'history' && styles.segmentTextActive,
+              ]}
+            >
+              History ({historyCount})
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {error && (
-        <ErrorBanner
-          message={error}
-          onRetry={fetchMyRequests}
-          onDismiss={clearError}
-        />
+        <View style={styles.errorPadding}>
+          <ErrorBanner
+            message={error}
+            onRetry={fetchMyRequests}
+            onDismiss={clearError}
+          />
+        </View>
       )}
 
       <FlatList
-        data={requests}
+        data={filteredRequests}
         keyExtractor={item => item._id}
         renderItem={renderRequest}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={renderEmpty}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            colors={['#34C759']}
-            tintColor="#34C759"
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       />
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
   header: {
-    backgroundColor: '#34C759',
-    paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  backButton: {
-    marginBottom: 8,
-  },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-  headerRow: {
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: typography.size.title,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+  },
+  subtitle: {
+    fontSize: typography.size.md,
+    color: colors.muted,
+    marginTop: spacing.xs,
   },
   newButton: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
   },
   newButtonText: {
-    color: '#34C759',
-    fontWeight: '600',
-    fontSize: 14,
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  segmentedContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.bgDark,
+    borderRadius: radius.full,
+    padding: spacing.xs,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    alignItems: 'center',
+  },
+  segmentButtonActive: {
+    backgroundColor: colors.card,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  segmentText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
+    color: colors.muted,
+  },
+  segmentTextActive: {
+    color: colors.text,
+    fontWeight: typography.weight.semibold,
+  },
+  errorPadding: {
+    paddingHorizontal: spacing.lg,
   },
   listContent: {
-    padding: 16,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxxl,
     flexGrow: 1,
   },
   requestCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: spacing.md,
   },
-  requestHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: spacing.lg,
+  },
+  badges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
   },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  statusBadgeText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   assignedBadge: {
-    backgroundColor: '#e8f5e9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    backgroundColor: colors.successLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
   },
-  assignedText: {
-    color: '#2e7d32',
-    fontSize: 11,
-    fontWeight: '600',
+  assignedBadgeText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.semibold,
+    color: colors.success,
   },
   feeText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
   },
-  addressContainer: {
-    marginBottom: 8,
+  locationsSection: {
+    marginBottom: spacing.md,
   },
-  addressRow: {
+  locationRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
   },
-  addressIcon: {
-    fontSize: 14,
-    marginRight: 8,
+  locationIcon: {
+    fontSize: 16,
+    marginRight: spacing.md,
+    marginTop: 2,
   },
-  addressText: {
-    fontSize: 14,
-    color: '#333',
+  locationTextContainer: {
     flex: 1,
   },
-  addressArrow: {
-    paddingLeft: 22,
-    paddingVertical: 2,
+  locationLabel: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.semibold,
+    color: colors.muted,
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
-  arrowText: {
-    fontSize: 12,
-    color: '#999',
+  locationAddress: {
+    fontSize: typography.size.md,
+    color: colors.text,
+  },
+  cardFooter: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    alignItems: 'flex-end',
   },
   dateText: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'right',
+    fontSize: typography.size.sm,
+    color: colors.muted,
   },
 });
